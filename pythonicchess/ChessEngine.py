@@ -352,7 +352,6 @@ class ConstrainedGameState(GameState):
         self.en_passant_target = None
     
     def hash_board_state(self):
-        # This is a simplified example. You should include turn, castling rights, and en passant rights for a complete hash.
         board_string = ''.join(str(self.board[piece]) for piece in sorted(self.board))
         return hashlib.sha256(board_string.encode()).hexdigest()
     
