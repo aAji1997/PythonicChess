@@ -30,22 +30,14 @@ def bitscan_forward(bb):
     LSB_64_table = [0, 47, 1, 56, 48, 27, 2, 60, 57, 49, 41, 37, 28, 16, 3, 61, 54, 58, 35, 52, 50, 42, 21, 44, 38, 32, 29, 23, 17, 11, 4, 62, 46, 55, 26, 59, 40, 36, 15, 53, 34, 51, 20, 43, 31, 22, 10, 45, 25, 39, 14, 33, 19, 24, 13, 30, 18, 12, 5, 63]
     return LSB_64_table[t32 & 255]
 class InvalidRookMoveError(Exception):
-    """Exception raised for invalid rook moves in a chess game.
 
-    Attributes:
-        message -- explanation of the error
-    """
 
     def __init__(self, message="An invalid rook move was attempted."):
         self.message = message
         super().__init__(self.message)
 
 class InvalidBishopMoveError(Exception):
-    """Exception raised for invalid bishop moves in a chess game.
 
-    Attributes:
-        message -- explanation of the error
-    """
 
     def __init__(self, message="An invalid bishop move was attempted."):
         self.message = message
@@ -53,12 +45,6 @@ class InvalidBishopMoveError(Exception):
 
 
 class InvalidQueenMoveError(Exception):
-    """Exception raised for invalid queen moves in a chess game.
-
-    Attributes:
-        message -- explanation of the error
-    """
-
     def __init__(self, message="An invalid queen move was attempted."):
         self.message = message
         super().__init__(self.message)
@@ -352,7 +338,6 @@ class ConstrainedGameState(GameState):
         self.en_passant_target = None
     
     def hash_board_state(self):
-        # This is a simplified example. You should include turn, castling rights, and en passant rights for a complete hash.
         board_string = ''.join(str(self.board[piece]) for piece in sorted(self.board))
         return hashlib.sha256(board_string.encode()).hexdigest()
     
@@ -366,7 +351,7 @@ class ConstrainedGameState(GameState):
     def get_all_possible_knight_moves(self):
         knight_moves = {}
         for i in range(64):
-            possible_moves_bitboard = 0  # Initialize the bitboard for this square
+            possible_moves_bitboard = 0  
             if i - 17 >= 0 and i % 8 >= 1:
                 possible_moves_bitboard |= 1 << (i - 17)
             if i - 15 >= 0 and i % 8 <= 6:
@@ -598,6 +583,21 @@ class ConstrainedGameState(GameState):
         return False
     
     def apply_pawn_constraints(self, from_position, to_position, pawn_type="w"):
+        """
+        Apply constraints to the movement of a pawn on the chess board.
+
+        Args:
+            self: The object itself.
+            from_position: The current position of the pawn.
+            to_position: The target position of the pawn.
+            pawn_type: The type of pawn, 'w' for white and 'b' for black. Defaults to 'w'.
+
+        Returns:
+            bool: True if the move satisfies all constraints.
+        
+        Raises:
+            ValueError: If the move violates any constraint.
+        """
         from_rank, to_rank = from_position // 8, to_position // 8
         from_file, to_file = from_position % 8, to_position % 8
         from_square, to_square = self.position_to_string(from_position), self.position_to_string(to_position)
@@ -696,6 +696,16 @@ class ConstrainedGameState(GameState):
         
         return False  # No obstacles found
     def apply_bishop_constraints(self, from_position, to_position):
+        """
+        Apply bishop constraints to the move from one position to another.
+
+        Args:
+            from_position: The position from which the move starts.
+            to_position: The position to which the move ends.
+
+        Returns:
+            bool: True if the move satisfies the bishop constraints, otherwise False.
+        """
         # Check if the path is clear
         obstacles = self.get_bishop_obstacles(from_position, to_position)
 
@@ -708,6 +718,16 @@ class ConstrainedGameState(GameState):
         return True
     
     def apply_knight_constraints(self, from_position, to_position):   
+        """
+        Apply constraints for the knight's movement on the chessboard.
+
+        Parameters:
+        - from_position: int, the starting position of the knight
+        - to_position: int, the target position for the knight
+
+        Returns:
+        - bool: True if the move is valid, otherwise raises a ValueError
+        """
         valid_moves = self.N_lookup[from_position]
 
         if valid_moves & (1 << to_position):
@@ -759,6 +779,14 @@ class ConstrainedGameState(GameState):
         return False  # No obstacles found
     
     def apply_rook_constraints(self, from_position, to_position):
+        """
+        Apply rook constraints and check for obstacles in the path between two positions.
+        Parameters:
+            from_position: tuple, the starting position
+            to_position: tuple, the destination position
+        Returns:
+            bool, True if the path is clear, False otherwise
+        """
         # Check if the path is clear
         obstacles = self.get_rook_obstacles(from_position, to_position)
 
@@ -822,6 +850,16 @@ class ConstrainedGameState(GameState):
         return False  # No obstacles found
 
     def apply_queen_constraints(self, from_position, to_position):
+        """
+        Apply queen constraints by checking for obstacles in the path from one position to another.
+
+        Args:
+            from_position: The starting position of the queen
+            to_position: The destination position of the queen
+
+        Returns:
+            True if the path is clear, otherwise raises a ValueError
+        """
         # Check if the path is clear
         obstacles = self.get_queen_obstacles(from_position, to_position)
 
@@ -843,6 +881,13 @@ class ConstrainedGameState(GameState):
                     position += 1
 
     def checking_queen_or_rook(self, king_position, side="w"):
+        """
+        Determine if there is a rook or queen checking the king, given the king's position and the side to check.
+        
+        :param king_position: The position of the king on the board.
+        :param side: The side to check for rook or queen (default is "w" for white).
+        :return: The position of the checking piece if found, otherwise None.
+        """
         rank, file = divmod(king_position, 8)
         # Determine the opposite side
         opposite_side = 'b' if side == 'w' else 'w'
@@ -880,6 +925,13 @@ class ConstrainedGameState(GameState):
         return None  # Return None if no checking piece is found
         
     def checking_bishop_or_queen(self, king_position, side="w"):
+        """
+        Determine if the opponent has a bishop or queen that can attack the king at the given position.
+        
+        :param king_position: int, the position of the king on the board
+        :param side: str, optional, the side for which to check (default is "w" for white)
+        :return: int or None, the position of the attacking bishop or queen, or None if no such piece exists
+        """
         opposite_side = 'b' if side == 'w' else 'w'
         bishop_queen_pieces = [opposite_side + 'B', opposite_side + 'Q']
         directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]  # Up-left, up-right, down-left, down-right
@@ -909,6 +961,17 @@ class ConstrainedGameState(GameState):
         return None  # No bishop or queen checking the king
     
     def checking_knight(self, king_position, side="w"):
+        """
+        A function to check if the opponent's knight is checking the king.
+        
+        Parameters:
+            self (obj): The object itself.
+            king_position (int): The position of the king on the board.
+            side (str): The side to check for the opponent's knight (default is "w" for white).
+        
+        Returns:
+            int or None: The position of the checking knight if found, otherwise None.
+        """
         # Determine the opposite side
         opposite_side = 'b' if side == 'w' else 'w'
         knight_moves = self.N_lookup[king_position]
@@ -920,6 +983,17 @@ class ConstrainedGameState(GameState):
         return None
     
     def checking_pawn(self, king_position, side="w"):
+        """
+        Determine if there is a pawn checking the king.
+
+        Parameters:
+            self (object): The object itself.
+            king_position (int): The position of the king on the board.
+            side (str): The side to check for pawns (default is "w").
+
+        Returns:
+            int or None: The position of the checking pawn, or None if the king is not checked.
+        """
         # Determine the opposite side
         opposite_side = 'b' if side == 'w' else 'w'
         # Check the diagonals for a pawn
@@ -934,6 +1008,16 @@ class ConstrainedGameState(GameState):
         return None
         
     def determine_if_checked(self, side="w"):
+        """
+        Determine if the specified side's king is checked. 
+
+        Args:
+            self: The object itself.
+            side (str): The side of the board to check for king's position, defaults to "w".
+
+        Returns:
+            bool: True if the king is checked, False otherwise.
+        """
         king_position = self.get_king_position(side)
         QR_check = self.checking_queen_or_rook(king_position, side)
         BQ_check = self.checking_bishop_or_queen(king_position, side)
@@ -951,6 +1035,9 @@ class ConstrainedGameState(GameState):
         return False
     
     def check_resolved(self):
+        """
+        Check if the current player is in check and update the check status for both white and black players accordingly.
+        """
         side = "w" if  not self.white_to_move else "b"
         if self.determine_if_checked(side=side):
             if not self.white_to_move:
@@ -983,6 +1070,19 @@ class ConstrainedGameState(GameState):
         return has_moved
 
     def apply_king_constraints(self, from_position, to_position):
+        """
+        Apply king constraints to the given positions.
+
+        Args:
+            from_position: The starting position of the king.
+            to_position: The destination position of the king.
+
+        Returns:
+            bool: True if the move satisfies the king's constraints, False otherwise.
+        
+        Raises:
+            ValueError: If the move does not satisfy the king's constraints, with a message indicating the invalid move.
+        """
         rank_diff = abs((to_position // 8) - (from_position // 8))
         file_diff = abs((to_position % 8) - (from_position % 8))
 
@@ -995,6 +1095,11 @@ class ConstrainedGameState(GameState):
             
 
     def assign_checking_and_final_states(self):
+        """
+        Determines the checking and final states of the game based on the current position and player to move. 
+        Updates the game state variables such as white_in_check, black_in_check, checkmated, is_drawn, etc. 
+        Also handles user input for resetting the game in case of checkmate, stalemate, threefold repetition, and insufficient material. 
+        """
         self.white_in_check = True if self.determine_if_checked(side="w") and self.white_to_move else False
         self.black_in_check = True if self.determine_if_checked(side="b") and not self.white_to_move else False
         if self.white_to_move and self.white_in_check:
@@ -1083,6 +1188,16 @@ class ConstrainedGameState(GameState):
                 print("The game has ended.")
                            
     def determine_if_checked_while_castling(self, king_position, side="w"):
+        """
+        Determine if the king is checked during castling.
+
+        Parameters:
+            king_position (tuple): The position of the king on the board.
+            side (str, optional): The side of the board to check for castling (default is "w" for white).
+
+        Returns:
+            bool or tuple: Returns the position of the checking piece or False if the king is not checked.
+        """
          
         QR_check = self.checking_queen_or_rook(king_position, side)
         BQ_check = self.checking_bishop_or_queen(king_position, side)
@@ -1124,6 +1239,16 @@ class ConstrainedGameState(GameState):
       return False
   
     def apply_castling_constraints(self, side="w", direction="k"):
+        """
+        Apply castling constraints based on the given side and direction.
+
+        Parameters:
+            side (str): The side for castling, either "w" for white or "b" for black. Defaults to "w".
+            direction (str): The direction for castling, either "k" for king-side or "q" for queen-side. Defaults to "k".
+
+        Returns:
+            bool: True if the castling constraints are satisfied, False otherwise.
+        """
         castle_string_expanded = side + "_castle_" + direction
         castle_status = getattr(self, castle_string_expanded)
         if not castle_status:
@@ -1162,6 +1287,14 @@ class ConstrainedGameState(GameState):
                     self.KR_moved_black = True
                     self.b_castle_k = False
     def castling_move(self, side="w", direction="k"):
+        """
+        A function to perform a castling move in chess, based on the side and direction provided.
+        Parameters:
+        - side: a string indicating the side, either "w" for white or "b" for black (default is "w")
+        - direction: a string indicating the direction, either "k" for kingside or "q" for queenside (default is "k")
+        Raises:
+        - ValueError if the relevant rook has been captured, or if the direction or side provided is invalid for castling move
+        """
         # Check that the relevant rook has not been captured
         rook_presence = self.get_piece_at_square("a" + str(1 if side == "w" else 8)) or self.get_piece_at_square("h" + str(1 if side == "w" else 8))
         if not rook_presence or rook_presence != side + "R":
@@ -1194,6 +1327,15 @@ class ConstrainedGameState(GameState):
             raise ValueError("Invalid direction or wrong side for castling move")
         
     def castling_logic(self, moving_piece):
+        """
+        A function to handle castling logic for the given moving piece.
+
+        Parameters:
+        moving_piece (str): The type of castling move to be executed.
+
+        Returns:
+        None
+        """
         # castling logic
         if "OO" in moving_piece or "OOO" in moving_piece:
             castle_type = moving_piece
@@ -1210,6 +1352,13 @@ class ConstrainedGameState(GameState):
 
 
     def determine_if_king_cant_move_here(self, king_position, side="w"):
+        """
+        Determine if the king cannot move to the given position by checking for threats from queen, rook, bishop, knight, and pawn. 
+
+        :param king_position: The position of the king on the board.
+        :param side: The side of the player, default is "w" for white.
+        :return: Returns False if the king is not threatened, otherwise returns the type of piece that is threatening the king.
+        """
          
         QR_check = self.checking_queen_or_rook(king_position, side)
         BQ_check = self.checking_bishop_or_queen(king_position, side)
@@ -1227,6 +1376,15 @@ class ConstrainedGameState(GameState):
         return False
 
     def get_adjacent_positions(self, king_position):
+        """
+        Returns a list of adjacent positions to the given king_position on the board.
+        
+        Parameters:
+        - king_position (int): The position of the king on the board (0-63).
+        
+        Returns:
+        - list: A list of adjacent positions to the king_position on the board.
+        """
         adjacent_positions = []
         # Offsets for all adjacent squares (including diagonals)
         offsets = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
@@ -1244,6 +1402,14 @@ class ConstrainedGameState(GameState):
         return adjacent_positions
     
     def king_can_move(self, side="w"):
+        """
+        Checks if the king can move to any adjacent positions. Returns True if the king can move, and False otherwise.
+        Parameters:
+            self (obj): The Chessboard object
+            side (str): The side of the king, default is "w" (white)
+        Returns:
+            bool: True if the king can move, False otherwise
+        """
         king_position = self.get_king_position(side)
         adj_positions = self.get_adjacent_positions(king_position)
         non_moveable_positions = []
@@ -1259,13 +1425,6 @@ class ConstrainedGameState(GameState):
         else:
             return True
     def can_piece_block_or_capture(self, target_position, side="w"):
-        """ Determine if any piece of the specified side can move to the target position, potentially stopping a check by blocking or capturing.
-        Parameters:
-            target_position (int): The target position to reach.
-            side (str): The side ('w' for white, 'b' for black) of the pieces.
-        Returns:
-            bool: True if any piece can reach the target position, False otherwise.
-        """
         # Get the position of the side's own king to skip it
         own_king_position = self.get_king_position(side)
         
@@ -1283,6 +1442,14 @@ class ConstrainedGameState(GameState):
         return False
     
     def can_capture_or_block(self, checking_piece_position, side="w"):
+        """ Determine if any piece of the specified side can capture the checking piece.
+        Parameters:
+            checking_piece_position (int): The position of the checking piece.
+            side (str): The side ('w' for white, 'b' for black) of the pieces.
+        Returns:
+            bool: True if any piece can capture the checking piece, False otherwise.
+        """
+        check_path = None
         # get king position
         king_position = self.get_king_position(side=side)
         rank_diff = (king_position // 8) - (checking_piece_position // 8)
@@ -1387,6 +1554,12 @@ class ConstrainedGameState(GameState):
         return False
     
     def get_all_possible_moves_current_pos(self, side):
+        """
+        Get all possible moves for the current position of the specified side.
+        :param self: The Chessboard object.
+        :param side: The side for which to calculate the possible moves.
+        :return: A dictionary containing the possible moves for each piece of the specified side.
+        """
         possible_moves = {}
         # Get bishop moves
         bishop_bitboard = self.board[side + 'B'] 
@@ -1447,6 +1620,17 @@ class ConstrainedGameState(GameState):
         return possible_moves
         
     def piece_constrainer(self, from_square="", to_square="", piece="wP"):
+        """
+        Check if a given piece follows the specified constraints for a move.
+
+        Parameters:
+            from_square (str): The starting position of the piece.
+            to_square (str): The ending position of the piece.
+            piece (str): The type of piece being moved. Defaults to "wP".
+
+        Returns:
+            bool: True if the piece follows the constraints, False otherwise.
+        """
         follows_constraint = False
         if piece[1] == "P" or piece == None:
             follows_constraint = self.apply_pawn_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square), pawn_type=piece[0])
@@ -1490,6 +1674,15 @@ class ConstrainedGameState(GameState):
             return True
         
     def move_piece(self, from_square="", to_square="", piece=None):
+        """
+        Move a piece on the board from one square to another, and perform necessary updates to the board state and move log. 
+        Params:
+            - from_square: str, the square from which the piece is being moved
+            - to_square: str, the square to which the piece is being moved
+            - piece: str, the type of the piece being moved
+        Returns:
+            None
+        """
         old_board = self.board.copy()
         old_move_log = self.move_log.copy()
         old_white_to_move = self.white_to_move
