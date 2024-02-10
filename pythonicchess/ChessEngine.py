@@ -1107,85 +1107,37 @@ class ConstrainedGameState(GameState):
                 self.checkmated = True
                 # Tell the user that white has been checkmated
                 print("White has been checkmated.")
+                
 
-                # Ask the user if they wish to reset the game
-                reset = input("Do you wish to reset the game? (y/n): ").strip().lower()
 
-                if reset == 'y':
-                    # If the user responds with "y", reset the game
-                    self.set_start_position()
-                else:
-                    # Otherwise, maintain the current position and assert that the game has ended
-                    print("The game has ended.")
-                    #assert not self.white_in_check, "Game should have ended with white checkmated."
         elif not self.white_to_move and self.black_in_check:
             if self.side_is_checkmated(side="b"):
                 self.checkmated = True
                 # Tell the user that black has been checkmated
                 print("Black has been checkmated.")
-
-                # Ask the user if they wish to reset the game
-                reset = input("Do you wish to reset the game? (y/n): ").strip().lower()
-
-                if reset == 'y':
-                    # If the user responds with "y", reset the game
-                    self.set_start_position()
-                else:
-                    # Otherwise, maintain the current position and assert that the game has ended
-                    print("The game has ended.")
-                    #assert not self.black_in_check, "Game should have ended with black checkmated."
-        
+                
+                
         # Assess stalemate conditions
         if self.white_to_move and not self.white_in_check:
             if self.side_is_stalemated(side="w"):
                 self.is_drawn = True
                 # Tell the user that the game has ended in a draw due to stalemate
-                print("The game has ended in a draw due to stalemate.")
+                print("The game has ended in a draw due to stalemate")
                 
-                # Ask the user if they wish to reset the game
-                reset = input("Do you wish to reset the game? (y/n): ").strip().lower()
-                
-                if reset == 'y':
-                    # If the user responds with "y", reset the game
-                    self.set_start_position()
-                else:
-                    # Otherwise, maintain the current position and assert that the game has ended
-                    print("The game has ended.")
-                    #assert not self.white_in_check, "Game should have ended with white checkmated."
         elif not self.white_to_move and not self.black_in_check:
             if self.side_is_stalemated(side="b"):
                 self.is_drawn = True
                 # Tell the user that the game has ended in a draw due to stalemate
                 print("The game has ended in a draw due to stalemate.")
                 
-                # Ask the user if they wish to reset the game
-                reset = input("Do you wish to reset the game? (y/n): ").strip().lower()
-                
-                if reset == 'y':
-                    # If the user responds with "y", reset the game
-                    self.set_start_position()
-                else:
-                    # Otherwise, maintain the current position and assert that the game has ended
-                    print("The game has ended.")
-                    
         if self.is_threefold_repetition() and not self.editing:
             self.is_drawn = True
-            reset = input("Draw by threefold repetition. Do you wish to reset the game? (y/n): ").strip().lower()
-            if reset == 'y':
-                # If the user responds with "y", reset the game
-                self.set_start_position()
-            else:
-                # Otherwise, maintain the current position and assert that the game has ended
-                print("The game has ended.")
+            print("Draw by threefold repetition")
+            
         if self.is_material_insufficient() and not self.editing:
             self.is_drawn = True
-            reset = input("Draw by insufficient material. Do you wish to reset the game? (y/n): ").strip().lower()
-            if reset == 'y':
-                # If the user responds with "y", reset the game
-                self.set_start_position()
-            else:
-                # Otherwise, maintain the current position and assert that the game has ended
-                print("The game has ended.")
+            print("Draw by insufficient material")
+            
                            
     def determine_if_checked_while_castling(self, king_position, side="w"):
         """
@@ -1251,6 +1203,7 @@ class ConstrainedGameState(GameState):
         """
         castle_string_expanded = side + "_castle_" + direction
         castle_status = getattr(self, castle_string_expanded)
+        #print("I've got the castle status", castle_status)
         if not castle_status:
             return False
         if side == "w" and self.white_in_check:
@@ -1267,6 +1220,7 @@ class ConstrainedGameState(GameState):
             # Check if any kings have moved or castled
             if 'K' in moving_piece or "OO" in moving_piece or "OOO" in moving_piece:
                 if self.white_to_move and (self.w_castle_k or self.w_castle_q):
+                    #print("White can't castle again")
                     self.w_castle_k = False
                     self.w_castle_q = False
                 if not self.white_to_move and (self.b_castle_k or self.b_castle_q):
@@ -1342,13 +1296,18 @@ class ConstrainedGameState(GameState):
             castle_direction = self.castle_mapping[castle_type]
             if self.white_to_move:
                 self.castling_move(side="w", direction=castle_direction)
+                self.log_castle("w"+castle_type)
                 self.white_to_move = not self.white_to_move
             else:
                 self.castling_move(side="b", direction=castle_direction)
+                self.log_castle("b"+castle_type)
                 self.white_to_move = not self.white_to_move
+            
         
     def log_castle(self, castle_string):
-        self.move_log = np.append(self.move_log, self.castle_logmap[castle_string]) 
+        #print(castle_string)
+        self.move_log = np.vstack([self.move_log, self.castle_logmap[castle_string]])
+        #print(self.move_log) 
 
 
     def determine_if_king_cant_move_here(self, king_position, side="w"):
@@ -1632,37 +1591,42 @@ class ConstrainedGameState(GameState):
             bool: True if the piece follows the constraints, False otherwise.
         """
         follows_constraint = False
-        if piece[1] == "P" or piece == None:
-            follows_constraint = self.apply_pawn_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square), pawn_type=piece[0])
+        if self.white_to_move and piece[0] == "w" or not self.white_to_move and piece[0] == "b" or "O" in piece:
         
-        elif piece[1] == "B":
-            follows_constraint = self.apply_bishop_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
+            if piece[1] == "P" or piece == None:
+                follows_constraint = self.apply_pawn_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square), pawn_type=piece[0])
+            
+            elif piece[1] == "B":
+                follows_constraint = self.apply_bishop_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
 
-        elif piece[1] == "N":
-            follows_constraint = self.apply_knight_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
-        
-        elif piece[1] == "R":
-            follows_constraint = self.apply_rook_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
-        elif piece[1] == "Q":
-            follows_constraint = self.apply_queen_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
-        
-        elif piece[1] == "K":
-            follows_constraint = self.apply_king_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
-        elif piece == "OO": # kingside castling
-            if self.white_to_move:
-                follows_constraint = self.apply_castling_constraints(side="w", direction="k")
+            elif piece[1] == "N":
+                follows_constraint = self.apply_knight_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
+            
+            elif piece[1] == "R":
+                follows_constraint = self.apply_rook_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
+            elif piece[1] == "Q":
+                follows_constraint = self.apply_queen_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
+            
+            elif piece[1] == "K":
+                follows_constraint = self.apply_king_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
+            elif piece == "OO": # kingside castling
+                if self.white_to_move:
+                    follows_constraint = self.apply_castling_constraints(side="w", direction="k")
+                else:
+                    follows_constraint = self.apply_castling_constraints(side="b", direction="k")
+            elif piece == "OOO": # queenside castling
+                if self.white_to_move:
+                    follows_constraint = self.apply_castling_constraints(side="w", direction="q")
+                else:
+                    follows_constraint = self.apply_castling_constraints(side="b", direction="q")
+                        
             else:
-                follows_constraint = self.apply_castling_constraints(side="b", direction="k")
-        elif piece == "OOO": # queenside castling
-            if self.white_to_move:
-                follows_constraint = self.apply_castling_constraints(side="w", direction="q")
-            else:
-                follows_constraint = self.apply_castling_constraints(side="b", direction="q")
-                    
+                # log warning saying constraint isn't implemented
+                follows_constraint = True
+                warnings.warn(f"Constraint not implemented for {piece[1]}")
         else:
-            # log warning saying constraint isn't implemented
-            follows_constraint = True
-            warnings.warn(f"Constraint not implemented for {piece[1]}")
+            raise ValueError(f"Not the right color to move: {piece}")
+            
 
         return follows_constraint
     def piece_castle_conditional(self, piece):
@@ -1674,94 +1638,95 @@ class ConstrainedGameState(GameState):
             return True
         
     def move_piece(self, from_square="", to_square="", piece=None):
-        """
-        Move a piece on the board from one square to another, and perform necessary updates to the board state and move log. 
-        Params:
-            - from_square: str, the square from which the piece is being moved
-            - to_square: str, the square to which the piece is being moved
-            - piece: str, the type of the piece being moved
-        Returns:
-            None
-        """
         old_board = self.board.copy()
         old_move_log = self.move_log.copy()
         old_white_to_move = self.white_to_move
+        if piece is not None and len(piece) == 1:
+            if self.white_to_move:
+                piece = 'w' + piece
+            else:
+                piece = 'b' + piece
         try:
             if self.piece_castle_conditional(piece):
-                # Convert the squares to positions
                 from_position = self.string_to_position(from_square)
                 to_position = self.string_to_position(to_square)
-
-                # Determine the color and type of the piece at the from_position
                 moving_piece = None
                 for p, bitboard in self.board.items():
                     if bitboard & (1 << from_position):
-                        if piece is None or p[1] == piece:
+                        if piece is None or p == piece:
                             moving_piece = p
                             break
                 if moving_piece is None:
                     raise ValueError(f"No {piece} at {from_square}.")
-                
                 promotion = False
                 if 'P' in moving_piece and ((moving_piece.startswith('w') and to_position // 8 == 0) or (moving_piece.startswith('b') and to_position // 8 == 7)):
                     promotion = True
-                
                 if self.piece_constrainer(from_square, to_square, piece=moving_piece):
-                    # Clear the old position
-                    self.clear_piece(moving_piece, from_position) 
+                    self.clear_piece(moving_piece, from_position)
                     if not promotion:
-                        # Set the new position
                         self.set_piece(moving_piece, to_position)
                     self.king_or_rook_moved(moving_piece, from_square=from_square)
                     self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
-                    self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')   
-                    # toggle self.white_to_move
+                    self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
                     self.white_to_move = not self.white_to_move
-                    # update board state
                     self.update_board_state()
-                    # evaluate check on king
                     self.assign_checking_and_final_states()
                     if self.white_to_move and self.white_in_check and not self.checkmated:
                         print("White is in check.")
                     if not self.white_to_move and self.black_in_check and not self.checkmated:
                         print("Black is in check.")
-                    # Is the king still in check?
                     self.check_resolved()
                     if not self.white_to_move and self.white_in_check:
-                        #self.white_to_move = not self.white_to_move
                         raise ValueError("Illegal move. White is still in check or is put in check.")
                     if self.white_to_move and self.black_in_check:
-                        #self.white_to_move = not self.white_to_move
                         raise ValueError("Illegal move. Black is still in check or is put in check.")
-                    # log the move
-                    
                     move_array = np.array([self.piece_enum[moving_piece], from_position, to_position], dtype=np.int8)
                     self.move_log = np.vstack([self.move_log, move_array])
                     if self.first_move:
                         self.move_log = self.move_log[1:]
                         self.first_move = False
+                else:
+                    raise ValueError(f"Illegal move from {from_square} to {to_square} for {moving_piece}.")
             else:
                 if self.piece_constrainer(piece=piece):
+                    self.king_or_rook_moved(moving_piece=piece)
                     self.castling_logic(piece)
                     self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
                     self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
                     self.update_board_state()
-                    self.king_or_rook_moved(moving_piece=piece)
-                    if self.white_to_move:
-                        self.log_castle(castle_string="w" + piece)
-                        #self.white_to_move = not self.white_to_move
-                    else:
-                        self.log_castle(castle_string="b" + piece)
-                        #self.white_to_move = not self.white_to_move
-     
+                    
         except Exception as e:
-            # If an error occurred during the move, revert the board state to the previous state
             self.board = old_board
             self.move_log = old_move_log
             self.white_to_move = old_white_to_move
-            #self.white_to_move = not self.white_to_move
             print(f"An error occurred while moving the piece: {e}")
             traceback.print_exc(file=sys.stdout)
+    def play_move(self):
+        move_prompt = input("Enter your move: ").strip()
+
+        # Castling moves
+        if move_prompt == "OO" or move_prompt == "OOO":
+            self.move_piece(piece=move_prompt)
+            return
+
+        # Piece-specific moves (e.g., "Ng1f3")
+        if len(move_prompt) == 5 and move_prompt[0].isalpha() and move_prompt[1].isalpha():
+            piece = move_prompt[0]
+            from_square = move_prompt[1:3]
+            to_square = move_prompt[3:5]
+            
+            self.move_piece(from_square=from_square, to_square=to_square, piece=piece)
+            return
+
+        # Normal moves (e.g., "e2e4")
+        if len(move_prompt) == 4:
+            from_square = move_prompt[:2]
+            to_square = move_prompt[2:]
+            self.move_piece(from_square=from_square, to_square=to_square)
+            print(self.get_piece_at_square("g1"))
+            return
+
+        print("Invalid move format.")
 
 def gameplay_check():
     game_state = ConstrainedGameState()
@@ -1784,6 +1749,10 @@ def gameplay_check():
     game_state.display_board()
     move_dict = game_state.get_all_possible_moves_current_pos(side="w")
     print(move_dict.keys())
+    
+
+                
+    
 
 def checking_evaluation():
     game_state = ConstrainedGameState()
@@ -1845,8 +1814,8 @@ def threefold_rep_evaluation():
     game_state.display_board()
     
 if __name__ == "__main__":
-    gameplay_check()
-    #checking_evaluation()
+    #gameplay_check()
+    checking_evaluation()
     #checkmate_evaluation()
     #threefold_rep_evaluation()
 
