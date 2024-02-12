@@ -56,6 +56,15 @@ class GameState:
         self.board = {'wP': 0, 'wR': 0, 'wN': 0, 'wB': 0, 'wQ': 0, 'wK': 0,
                       'bP': 0, 'bR': 0, 'bN': 0, 'bB': 0, 'bQ': 0, 'bK': 0}
         self.piece_enum = {piece: i for i, piece in enumerate(self.board)}
+        self.piece_enum["=wQ"] = 12
+        self.piece_enum["=wR"] = 13
+        self.piece_enum["=wN"] = 14
+        self.piece_enum["=wB"] = 15
+        self.piece_enum["=bQ"] = 16
+        self.piece_enum["=bR"] = 17
+        self.piece_enum["=bN"] = 18
+        self.piece_enum["=bB"] = 19
+        
         self.files = ["a", "b", "c", "d", "e", "f", "g", "h"]
         self.ranks = [1, 2, 3, 4, 5, 6, 7, 8]
         
@@ -336,6 +345,12 @@ class ConstrainedGameState(GameState):
         self.checkmated = False
         self.drawn = False
         self.en_passant_target = None
+        
+        self.promoting = False
+        self.promoted_piece = None
+        self.promoting_from_pos = None
+        self.promoting_to_pos = None
+        
     
     def hash_board_state(self):
         board_string = ''.join(str(self.board[piece]) for piece in sorted(self.board))
@@ -627,13 +642,7 @@ class ConstrainedGameState(GameState):
             to_rank = to_position // 8
             if (pawn_type == "w" and to_rank == 0) or (pawn_type == "b" and to_rank == 7):
                 # Prompt the user for the type of piece to promote to
-                promotion_piece = input("Pawn promotion! Enter the type of piece to promote to (Q, R, B, N): ")
-                # Validate the input
-                if promotion_piece not in ["Q", "R", "B", "N"]:
-                    raise ValueError("Invalid piece type for pawn promotion.")
-                # Replace the pawn with the new piece
-                self.clear_piece(pawn_type + "P", to_position)
-                self.set_piece(pawn_type + promotion_piece, to_position)
+                print("Pawn promotion!")
         else:
             # Check for en passant
             if self.is_en_passant_move(from_position, to_position):
@@ -1725,10 +1734,16 @@ class ConstrainedGameState(GameState):
                 promotion = False
                 if 'P' in moving_piece and ((moving_piece.startswith('w') and to_position // 8 == 0) or (moving_piece.startswith('b') and to_position // 8 == 7)):
                     promotion = True
+                    self.promoting = True
+                else:
+                    self.promoting = False
                 if self.piece_constrainer(from_square, to_square, piece=moving_piece):
                     self.clear_piece(moving_piece, from_position)
                     if not promotion:
                         self.set_piece(moving_piece, to_position)
+                    if promotion:
+                        self.promoting_from_pos = from_position
+                        self.promoting_to_pos = to_position
                     self.king_or_rook_moved(moving_piece, from_square=from_square)
                     self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
                     self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
@@ -1747,8 +1762,9 @@ class ConstrainedGameState(GameState):
                         raise ValueError("Illegal move. White is still in check or is put in check.")
                     if self.white_to_move and self.black_in_check:
                         raise ValueError("Illegal move. Black is still in check or is put in check.")
-                    move_array = np.array([self.piece_enum[moving_piece], from_position, to_position], dtype=np.int8)
-                    self.move_log = np.vstack([self.move_log, move_array])
+                    if not self.promoting:
+                        move_array = np.array([self.piece_enum[moving_piece], from_position, to_position], dtype=np.int8)
+                        self.move_log = np.vstack([self.move_log, move_array])
                     if self.first_move:
                         self.move_log = self.move_log[1:]
                         self.first_move = False

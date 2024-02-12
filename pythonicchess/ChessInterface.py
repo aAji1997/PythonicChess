@@ -8,6 +8,7 @@ from time import sleep
 def signal_handler(sig, frame):
     print('You pressed Ctrl+C or another exit command!')
     sys.exit(0)
+    
 """
 This is the main driver file for the chess game. 
 It will be responsible for handling user input and displaying the current game state.
@@ -56,7 +57,6 @@ class GameInterface(ConstrainedGameState):
                     self.reset = True
                     self.draw_game_state()
                     
-                
                 if self.highlighted_square:
                     self.highlight_square(self.highlighted_square)
                 for e in pg.event.get():
@@ -103,8 +103,7 @@ class GameInterface(ConstrainedGameState):
                                 self.move_piece(self.position_to_string(self.first_click_pos), self.position_to_string(second_click_pos))
                             self.first_click = False
                             self.highlighted_square = None
-
-                        
+                self.render_pawn_promotion()         
                 clock.tick(self.fps)
                 pg.display.update()
         except Exception as e:
@@ -122,7 +121,6 @@ class GameInterface(ConstrainedGameState):
         self.reset = False
         self.checkmated = False
         
-    
     def draw_board(self):
         colors = [pg.Color("white"), pg.Color(0, 100, 0)]
         for i in range(self.dimensions):
@@ -140,6 +138,57 @@ class GameInterface(ConstrainedGameState):
     def highlight_square(self, square):
         row, col = square
         pg.draw.rect(self.screen, (255, 0, 0), (col * self.square_size, row * self.square_size, self.square_size, self.square_size), 3)
+    
+    def render_pawn_promotion(self):
+        if not self.promoting:
+            return
+
+        # Define the promotion pane dimensions
+        pane_width = 512
+        pane_height = 512
+
+        # Create a new surface for the promotion pane
+        promotion_surface = pg.Surface((pane_width, pane_height))
+        promotion_surface.fill(pg.Color(200, 200, 200))
+
+        # Load and display the promotion piece options
+        pieces = ['Q', 'R', 'B', 'N']
+        piece_images = {}
+        for piece in pieces:
+            color_prefix = 'w' if not self.white_to_move else 'b'
+            piece_string = f'{color_prefix}{piece}'
+            piece_images[piece_string] = pg.transform.scale(
+                pg.image.load(f'/home/hal/ssdlink/PythonicChess/pythonicchess/images/{piece_string}.png'),
+                (self.square_size, self.square_size)
+            )
+            piece_x = pieces.index(piece) * (pane_width // len(pieces))
+            promotion_surface.blit(piece_images[piece_string], (piece_x, 0))
+
+        # Create a new window for the promotion pane
+        promotion_window = pg.display.set_mode((pane_width, pane_height))
+        promotion_window.blit(promotion_surface, (0, 0))
+        pg.display.update()
+    # Event handling for piece selection
+        while True:
+            for e in pg.event.get():
+                if e.type == pg.MOUSEBUTTONDOWN:
+                    mouse_x, mouse_y = pg.mouse.get_pos()
+                    for i, piece in enumerate(pieces):
+                        piece_x = i * (pane_width // len(pieces))
+                        if piece_x < mouse_x < piece_x + (pane_width // len(pieces)):
+                            self.promoted_piece = f"{color_prefix}{piece}"
+                            color = "b" if self.white_to_move else "w"
+                            self.clear_piece(piece=color+"P", position=self.promoting_from_pos)
+                            self.set_piece(piece=self.promoted_piece, position=self.promoting_to_pos)
+                            move_array = np.array([self.piece_enum["="+self.promoted_piece], self.promoting_from_pos, self.promoting_to_pos], dtype=np.int8)
+                            self.move_log = np.vstack([self.move_log, move_array])
+                            self.promoting = False
+                            
+                            return
+                        
+                elif e.type == pg.QUIT:
+                    pg.display.quit()
+                    return
         
 if __name__ == "__main__":
     game = GameInterface()
