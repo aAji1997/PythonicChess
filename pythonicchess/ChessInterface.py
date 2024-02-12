@@ -116,10 +116,10 @@ class GameInterface(ConstrainedGameState):
 
     def reset_game(self):
         self.draw_game_state()
-        sleep(1)   
+        sleep(1)
+        self.__init__()   
         self.set_start_position()
-        self.reset = False
-        self.checkmated = False
+        
         
     def draw_board(self):
         colors = [pg.Color("white"), pg.Color(0, 100, 0)]
