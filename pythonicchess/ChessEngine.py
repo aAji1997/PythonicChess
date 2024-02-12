@@ -3,7 +3,7 @@ This is the chess engine module. It will be responsible for
 move generation and evaluation of chess games.
 """
 import warnings
-
+from copy import deepcopy
 import numpy as np
 
 import sys
@@ -659,12 +659,15 @@ class ConstrainedGameState(GameState):
 
         return True
     def get_bishop_obstacles(self, from_position, to_position):
+        #print(f"Getting bishop obstacles from {self.position_to_string(from_position)} to {self.position_to_string(to_position)}")
         # Calculate the direction of the diagonal
         rank_diff = (to_position // 8) - (from_position // 8)
+        #print(rank_diff)
         file_diff = (to_position % 8) - (from_position % 8)
+        #print(file_diff)
         
         # Check if the move is diagonal
-        if not(rank_diff != 0 and file_diff != 0):
+        if abs(rank_diff) != abs(file_diff):
             # Convert positions to square strings
             from_square = self.position_to_string(from_position)
             to_square = self.position_to_string(to_position)
@@ -1018,19 +1021,31 @@ class ConstrainedGameState(GameState):
         Returns:
             bool: True if the king is checked, False otherwise.
         """
+        ##print("Getting king position...")
         king_position = self.get_king_position(side)
+        #print("King position:", self.position_to_string(king_position))
+        #print("Checking if king is checked by rook or queen...")
+        adj_k = self.are_kings_adjacent(side, king_position)
         QR_check = self.checking_queen_or_rook(king_position, side)
+        #print("Checking if king is checked by bishop or queen...")
         BQ_check = self.checking_bishop_or_queen(king_position, side)
+        #print("Checking if king is checked by knight...")
         N_check = self.checking_knight(king_position, side)
-        P_check = self.checking_pawn(king_position, side) 
+        #print("Checking if king is checked by pawn...")
+        P_check = self.checking_pawn(king_position, side)
+        #print("All checks done.") 
         if QR_check:
             return QR_check
         elif BQ_check:
+            #print("BQ check")
+            
             return BQ_check
         elif N_check:
             return N_check
         elif P_check:
             return P_check
+        elif adj_k:
+            return adj_k
         # The king is not checked
         return False
     
@@ -1068,6 +1083,26 @@ class ConstrainedGameState(GameState):
         has_moved = not (current_rook_bitboard & initial_rook_position)
         
         return has_moved
+    
+    def are_kings_adjacent(self, side, to_position):
+        """
+        Check if the king is moving to a square adjacent to the opponent's king.
+
+        Args:
+            side (str): The side moving, either 'w' or 'b'.
+            to_position (int): The bitboard position to move the king to.
+
+        Returns: 
+            bool: True if the kings are adjacent after moving, False otherwise.
+        """
+        # Get opponent's king position
+        opponent_king_pos = self.get_king_position('b' if side == 'w' else 'w')
+        
+        # Get adjacent squares to opponent's king
+        adj_squares = self.get_adjacent_positions(opponent_king_pos)
+        
+        # Check if target position is adjacent 
+        return to_position in adj_squares
 
     def apply_king_constraints(self, from_position, to_position):
         """
@@ -1085,13 +1120,20 @@ class ConstrainedGameState(GameState):
         """
         rank_diff = abs((to_position // 8) - (from_position // 8))
         file_diff = abs((to_position % 8) - (from_position % 8))
+        
+        if self.are_kings_adjacent('w' if self.white_to_move else 'b', to_position):
+            from_square, to_square = self.position_to_string(from_position), self.position_to_string(to_position)
+            raise ValueError(f"Invalid move for king from {from_square} to {to_square}, adjacent to opponent's king")
 
         # King can move one step in any direction, so the rank and file difference should be at most 1
         if rank_diff <= 1 and file_diff <= 1 and not (rank_diff == 0 and file_diff == 0):
             return True
+        
         else:
             from_square, to_square = self.position_to_string(from_position), self.position_to_string(to_position)
             raise ValueError(f"Invalid move for king from {from_square} to {to_square}, not a single step")
+        
+        
             
 
     def assign_checking_and_final_states(self):
@@ -1100,17 +1142,25 @@ class ConstrainedGameState(GameState):
         Updates the game state variables such as white_in_check, black_in_check, checkmated, is_drawn, etc. 
         Also handles user input for resetting the game in case of checkmate, stalemate, threefold repetition, and insufficient material. 
         """
-        self.white_in_check = True if self.determine_if_checked(side="w") and self.white_to_move else False
-        self.black_in_check = True if self.determine_if_checked(side="b") and not self.white_to_move else False
+        #self.white_in_check = True if self.determine_if_checked(side="w") and self.white_to_move else False
+        #self.black_in_check = True if self.determine_if_checked(side="b") and not self.white_to_move else False
+        if self.white_to_move:
+            if self.determine_if_checked(side="w"):
+                self.white_in_check = True
+            
+        if not self.white_to_move:
+            #print("Checking if black is in check...")
+            if self.determine_if_checked(side="b"):
+                #print("Black is in check.")
+                self.black_in_check = True
         if self.white_to_move and self.white_in_check:
             if self.side_is_checkmated(side="w"):
                 self.checkmated = True
                 # Tell the user that white has been checkmated
                 print("White has been checkmated.")
                 
-
-
         elif not self.white_to_move and self.black_in_check:
+            print("Checking if black is checkmated...")
             if self.side_is_checkmated(side="b"):
                 self.checkmated = True
                 # Tell the user that black has been checkmated
@@ -1240,6 +1290,17 @@ class ConstrainedGameState(GameState):
                 if not self.white_to_move and from_square == "h8" and self.b_castle_k:
                     self.KR_moved_black = True
                     self.b_castle_k = False
+            # check if kings have moved
+            if "K" in moving_piece:
+                if self.white_to_move and from_square == "e1":
+                    self.K_moved_white = True
+                    self.w_castle_k = False
+                    self.w_castle_q = False
+                if not self.white_to_move and from_square == "e8":
+                    self.K_moved_black = True
+                    self.b_castle_k = False
+                    self.b_castle_q = False
+            
     def castling_move(self, side="w", direction="k"):
         """
         A function to perform a castling move in chess, based on the side and direction provided.
@@ -1318,7 +1379,7 @@ class ConstrainedGameState(GameState):
         :param side: The side of the player, default is "w" for white.
         :return: Returns False if the king is not threatened, otherwise returns the type of piece that is threatening the king.
         """
-         
+        adj_k = self.are_kings_adjacent(side=side, to_position=king_position) 
         QR_check = self.checking_queen_or_rook(king_position, side)
         BQ_check = self.checking_bishop_or_queen(king_position, side)
         N_check = self.checking_knight(king_position, side)
@@ -1331,6 +1392,8 @@ class ConstrainedGameState(GameState):
             return N_check
         elif P_check:
             return P_check
+        elif adj_k:
+            return adj_k
         # The king is not checked
         return False
 
@@ -1377,7 +1440,10 @@ class ConstrainedGameState(GameState):
             if occupying_piece is not None:
                 if occupying_piece[0] == side:
                     non_moveable_positions.append(position) # piece is present at position, therefore king can't move here
-            if self.determine_if_king_cant_move_here(position, side):
+                elif occupying_piece[0] != side and self.determine_if_king_cant_move_here(position, side):
+                    non_moveable_positions.append(position)
+            elif self.determine_if_king_cant_move_here(position, side):
+                print(f"King can't move to {self.position_to_string(position)}, because of check")
                 non_moveable_positions.append(position) # king is in check here, therefore king can't move here
         if adj_positions == non_moveable_positions:
             return False
@@ -1391,10 +1457,13 @@ class ConstrainedGameState(GameState):
         for piece, bitboard in self.board.items():
             if piece.startswith(side) and not piece.endswith('K'):  # Skip the king
                 for position in range(64):
+                    #print(f"Trying position {self.position_to_string(position)} for {piece}")
                     if bitboard & (1 << position) and position != own_king_position:  # Skip the king's position
+                        #print("Present")
                         # Check if the piece can legally move to the target position
                         try:
                             if self.piece_constrainer(from_square=self.position_to_string(position), to_square=self.position_to_string(target_position), piece=piece):
+                                print(f"Found {piece} to block or capture at {self.position_to_string(position)}, targeting {self.position_to_string(target_position)}")
                                 return True
                         except Exception:  # Catch any exception
                             continue
@@ -1408,7 +1477,6 @@ class ConstrainedGameState(GameState):
         Returns:
             bool: True if any piece can capture the checking piece, False otherwise.
         """
-        check_path = None
         # get king position
         king_position = self.get_king_position(side=side)
         rank_diff = (king_position // 8) - (checking_piece_position // 8)
@@ -1416,42 +1484,37 @@ class ConstrainedGameState(GameState):
 
         # Determine the check path
         if rank_diff == 0:
-            check_path = 'r'  # The check is along the same rank
+            step = 1 if file_diff > 0 else -1
+            path_positions = [(king_position // 8) * 8 + file for file in range(checking_piece_position % 8 + step, king_position % 8, step)]
         elif file_diff == 0:
-            check_path = 'f'  # The check is along the same file
+            step = 8 if rank_diff > 0 else -8
+            path_positions = [rank * 8 + (king_position % 8) for rank in range(checking_piece_position // 8 + step // 8, king_position // 8, step // 8)]
         elif abs(rank_diff) == abs(file_diff):
-            check_path = 'd'  # The check is along a diagonal
-        path_positions = []
-        if check_path == 'r':  # Check along the rank
-            step = 1 if file_diff > 0 else -1  # Determine step direction based on file difference
-            for file in range(checking_piece_position % 8, king_position % 8, step):
-                path_positions.append((king_position // 8) * 8 + file)
-            
-        elif check_path == 'f':  # Check along the file
-            step = 8 if rank_diff > 0 else -8  # Determine step direction based on rank difference
-            for rank in range(checking_piece_position // 8, king_position // 8, step // 8):
-                path_positions.append(rank * 8 + (king_position % 8))
-            
-        elif check_path == 'd':  # Check along the diagonal
-            rank_step = 8 if rank_diff > 0 else -8  # Determine rank step direction
-            file_step = 1 if file_diff > 0 else -1  # Determine file step direction
-            step = rank_step + file_step  # Combine rank and file step for diagonal movement
-            for pos in range(checking_piece_position, king_position, step):
-                if (pos // 8) != (pos + step // 8):  # Break if moving to a new rank
-                    break
-                path_positions.append(pos)
+            rank_step = 1 if rank_diff > 0 else -1
+            file_step = 1 if file_diff > 0 else -1
+            path_positions = []
+            rank = checking_piece_position // 8 + rank_step
+            file = checking_piece_position % 8 + file_step
+            while 0 <= rank < 8 and 0 <= file < 8 and rank * 8 + file != king_position:
+                path_positions.append(rank * 8 + file)
+                rank += rank_step
+                file += file_step
+        else:
+            # If the check is not along a rank, file, or diagonal, no path exists
+            return False
 
         path_positions.append(checking_piece_position)  # Include the position of the checking piece
         
-        for position in path_positions:
-            if self.can_piece_block_or_capture(position, side=side):
-                return True
-        return False
+        # Check if any piece can block or capture along the path
+        return any(self.can_piece_block_or_capture(position, side=side) for position in path_positions)
     
     def side_is_checkmated(self, side="w"):
         checking_piece_position = self.determine_if_checked(side=side)
         if checking_piece_position:
+            print("Checking if king can move")
             if not self.king_can_move(side=side):
+                print("King can't move")
+                print("Checking if any piece can block or capture")
                 if self.can_capture_or_block(checking_piece_position, side=side):
                     return False
                 else:
@@ -1638,9 +1701,11 @@ class ConstrainedGameState(GameState):
             return True
         
     def move_piece(self, from_square="", to_square="", piece=None):
+        old_self = ConstrainedGameState()
         old_board = self.board.copy()
-        old_move_log = self.move_log.copy()
-        old_white_to_move = self.white_to_move
+        for attr, value in vars(self).items():
+            if isinstance(value, (bool, list, np.ndarray)):
+                setattr(old_self, attr, deepcopy(value))
         if piece is not None and len(piece) == 1:
             if self.white_to_move:
                 piece = 'w' + piece
@@ -1668,13 +1733,16 @@ class ConstrainedGameState(GameState):
                     self.king_or_rook_moved(moving_piece, from_square=from_square)
                     self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
                     self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
-                    self.white_to_move = not self.white_to_move
+                    
                     self.update_board_state()
+                    self.white_to_move = not self.white_to_move
                     self.assign_checking_and_final_states()
+                    
                     if self.white_to_move and self.white_in_check and not self.checkmated:
                         print("White is in check.")
                     if not self.white_to_move and self.black_in_check and not self.checkmated:
                         print("Black is in check.")
+                    
                     self.check_resolved()
                     if not self.white_to_move and self.white_in_check:
                         raise ValueError("Illegal move. White is still in check or is put in check.")
@@ -1696,9 +1764,9 @@ class ConstrainedGameState(GameState):
                     self.update_board_state()
                     
         except Exception as e:
+            for attr in vars(old_self):
+                setattr(self, attr, getattr(old_self, attr))
             self.board = old_board
-            self.move_log = old_move_log
-            self.white_to_move = old_white_to_move
             print(f"An error occurred while moving the piece: {e}")
             traceback.print_exc(file=sys.stdout)
     def play_move(self):
@@ -1750,29 +1818,14 @@ def gameplay_check():
     move_dict = game_state.get_all_possible_moves_current_pos(side="w")
     print(move_dict.keys())
     
-
-                
-    
-
 def checking_evaluation():
     game_state = ConstrainedGameState()
     game_state.set_start_position()
-    game_state.move_piece(from_square="e2", to_square="e4")
-    game_state.move_piece(from_square="d7", to_square="d5")
-    game_state.move_piece(from_square="e4", to_square="d5")
-    
-    game_state.move_piece(from_square="d8", to_square="d5", piece="Q")
-    game_state.move_piece(from_square="b1", to_square="c3", piece="N")
-    game_state.move_piece(from_square="d5", to_square="e5", piece="Q")
-    game_state.move_piece(from_square="f1", to_square="e2", piece="B")
-    game_state.move_piece(from_square="g8", to_square="f6", piece="N")
-    game_state.display_board()
     game_state.clear_board()
-    game_state.set_piece("wP", game_state.string_to_position("e4")) # direct piece placement
-    game_state.set_piece("bK", game_state.string_to_position("f6"))
+    game_state.set_piece("wP", game_state.string_to_position("e7"))
+    game_state.set_piece("bK", game_state.string_to_position("c2"))
     game_state.set_piece("wK", game_state.string_to_position("e1"))
-    game_state.white_to_move = True
-    game_state.move_piece(from_square="e4", to_square="e5")
+    game_state.move_piece(from_square="e7", to_square="e8")
     game_state.display_board()
 
 def checkmate_evaluation():

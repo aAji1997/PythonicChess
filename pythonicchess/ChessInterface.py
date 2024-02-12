@@ -78,13 +78,23 @@ class GameInterface(ConstrainedGameState):
                             king_position = self.get_king_position(side)
                             if self.first_click_pos == king_position:
                                 # Check if the move is a kingside or queenside castling
-                                if col == 6:
-                                    # Kingside castling
-                                    #print("Kingside castling")
-                                    self.move_piece(piece="OO")
+                                if col == 6:  # Kingside castling
+                                    if side == 'w' and self.w_castle_k:
+                                        self.move_piece(piece="OO")
+                                    elif side == 'b' and self.b_castle_k:
+                                        self.move_piece(piece="OO")
+                                    else:
+                                        # Regular move
+                                        self.move_piece(self.position_to_string(self.first_click_pos), self.position_to_string(second_click_pos))
+                                        
                                 elif col == 2:  # Queenside castling
-                                    #print("Queenside castling")
-                                    self.move_piece(piece="OOO")
+                                    if side == 'w' and self.w_castle_q:
+                                        self.move_piece(piece="OOO")
+                                    elif side == 'b' and self.b_castle_q:
+                                        self.move_piece(piece="OOO")
+                                    else:
+                                        # Regular move
+                                        self.move_piece(self.position_to_string(self.first_click_pos), self.position_to_string(second_click_pos))
                                 else:
                                     # Regular move
                                     self.move_piece(self.position_to_string(self.first_click_pos), self.position_to_string(second_click_pos))
