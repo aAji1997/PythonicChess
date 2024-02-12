@@ -1277,19 +1277,18 @@ class ConstrainedGameState(GameState):
                     self.b_castle_k = False
                     self.b_castle_q = False 
             # Check if any rooks have moved
-            if 'R' in moving_piece:
-                if self.white_to_move and from_square == "a1" and self.w_castle_q:
-                    self.QR_moved_white = True
-                    self.w_castle_q = False
-                if self.white_to_move and from_square == "h1" and self.w_castle_k:
-                    self.KR_moved_white = True
-                    self.w_castle_k = False
-                if not self.white_to_move and from_square == "a8" and self.b_castle_q:
-                    self.QR_moved_black = True
-                    self.b_castle_q = False
-                if not self.white_to_move and from_square == "h8" and self.b_castle_k:
-                    self.KR_moved_black = True
-                    self.b_castle_k = False
+            if self.check_if_rook_moved(side="w", rook_type="k"):
+                self.KR_moved_white = True
+                self.w_castle_k = False
+            if self.check_if_rook_moved(side="w", rook_type="q"):
+                self.QR_moved_white = True
+                self.w_castle_q = False
+            if self.check_if_rook_moved(side="b", rook_type="k"):
+                self.KR_moved_black = True
+                self.b_castle_k = False
+            if self.check_if_rook_moved(side="b", rook_type="q"):
+                self.QR_moved_black = True
+                self.b_castle_q = False
             # check if kings have moved
             if "K" in moving_piece:
                 if self.white_to_move and from_square == "e1":
