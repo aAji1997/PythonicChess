@@ -32,8 +32,12 @@ class GameInterface(ConstrainedGameState):
         self.reset = False
         
     def pixel_to_position(self, x, y):
-        row = y // self.square_size
-        col = x // self.square_size
+        if self.white_to_move:
+            row = y // self.square_size
+            col = x // self.square_size
+        else:
+            row = (self.height - y) // self.square_size
+            col = (self.width - x) // self.square_size
         position = row * 8 + col
         return position
 
@@ -51,6 +55,7 @@ class GameInterface(ConstrainedGameState):
             while running:
                 if self.reset:
                     self.reset_game()
+                
                 self.draw_game_state()
                 
                 if self.checkmated or self.drawn:
@@ -111,6 +116,7 @@ class GameInterface(ConstrainedGameState):
 
                 
     def draw_game_state(self):
+        
         self.draw_board()
         self.draw_pieces()
 
@@ -125,8 +131,12 @@ class GameInterface(ConstrainedGameState):
         colors = [pg.Color("white"), pg.Color(0, 100, 0)]
         for i in range(self.dimensions):
             for j in range(self.dimensions):
-                color = colors[((i + j) % 2)]
-                pg.draw.rect(self.screen, color, (i * self.square_size, j * self.square_size, self.square_size, self.square_size))
+                if self.white_to_move:
+                    color = colors[((i + j) % 2)]
+                    pg.draw.rect(self.screen, color, (i * self.square_size, j * self.square_size, self.square_size, self.square_size))
+                else:
+                    color = colors[((i + j) % 2)]
+                    pg.draw.rect(self.screen, color, ((7-i) * self.square_size, (7-j) * self.square_size, self.square_size, self.square_size))
     
     def draw_pieces(self):
         for piece, bitboard in self.board.items():
@@ -134,7 +144,13 @@ class GameInterface(ConstrainedGameState):
                 if (bitboard >> i) & 1:  # if the i-th bit is set
                     row = i // 8
                     col = i % 8
-                    self.screen.blit(self.images[piece], pg.Rect(col * self.square_size, row * self.square_size, self.square_size, self.square_size))
+                    if self.white_to_move:
+                        self.screen.blit(self.images[piece], pg.Rect(col * self.square_size, row * self.square_size, self.square_size, self.square_size))
+                    else:
+                        flipped_row = 7 - row
+                        flipped_col = 7 - col
+                        self.screen.blit(self.images[piece], pg.Rect(flipped_col * self.square_size, flipped_row * self.square_size, self.square_size, self.square_size))
+                        
     def highlight_square(self, square):
         row, col = square
         pg.draw.rect(self.screen, (255, 0, 0), (col * self.square_size, row * self.square_size, self.square_size, self.square_size), 3)
