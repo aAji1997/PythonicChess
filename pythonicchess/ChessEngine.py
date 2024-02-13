@@ -56,6 +56,10 @@ class GameState:
         self.board = {'wP': 0, 'wR': 0, 'wN': 0, 'wB': 0, 'wQ': 0, 'wK': 0,
                       'bP': 0, 'bR': 0, 'bN': 0, 'bB': 0, 'bQ': 0, 'bK': 0}
         self.piece_enum = {piece: i for i, piece in enumerate(self.board)}
+        self.piece_enum["wOO"] = -2
+        self.piece_enum["wOOO"] = -3
+        self.piece_enum["bOO"] = -4
+        self.piece_enum["bOOO"] = -5
         self.piece_enum["=wQ"] = 12
         self.piece_enum["=wR"] = 13
         self.piece_enum["=wN"] = 14
@@ -1379,30 +1383,50 @@ class ConstrainedGameState(GameState):
         #print(self.move_log) 
 
 
-    def determine_if_king_cant_move_here(self, king_position, side="w"):
+    def determine_if_king_cant_move_here(self, new_king_position, side="w"):
         """
         Determine if the king cannot move to the given position by checking for threats from queen, rook, bishop, knight, and pawn. 
 
-        :param king_position: The position of the king on the board.
+        :param new_king_position: The new position of the king on the board.
         :param side: The side of the player, default is "w" for white.
         :return: Returns False if the king is not threatened, otherwise returns the type of piece that is threatening the king.
         """
-        adj_k = self.are_kings_adjacent(side=side, to_position=king_position) 
-        QR_check = self.checking_queen_or_rook(king_position, side)
-        BQ_check = self.checking_bishop_or_queen(king_position, side)
-        N_check = self.checking_knight(king_position, side)
-        P_check = self.checking_pawn(king_position, side) 
-        if QR_check:
-            return QR_check
-        elif BQ_check:
-            return BQ_check
-        elif N_check:
-            return N_check
-        elif P_check:
-            return P_check
-        elif adj_k:
+        # Save current board state
+        curr_king_position = self.get_king_position(side)
+        old_board = deepcopy(self.board)
+        
+        # Temporarily move the king
+        self.clear_piece(piece=side+"K", position=curr_king_position)
+        self.set_piece(piece=side+"K", position=new_king_position)
+        
+        # Perform checks
+        adj_k = self.are_kings_adjacent(side=side, to_position=new_king_position)
+        if adj_k:
+            self.board = old_board
             return adj_k
-        # The king is not checked
+
+        QR_check = self.checking_queen_or_rook(new_king_position, side)
+        if QR_check:
+            self.board = old_board
+            return QR_check
+
+        BQ_check = self.checking_bishop_or_queen(new_king_position, side)
+        if BQ_check:
+            self.board = old_board
+            return BQ_check
+
+        N_check = self.checking_knight(new_king_position, side)
+        if N_check:
+            self.board = old_board
+            return N_check
+
+        P_check = self.checking_pawn(new_king_position, side)
+        if P_check:
+            self.board = old_board
+            return P_check
+
+        # Restore the board to the previous state once, before returning
+        self.board = old_board
         return False
 
     def get_adjacent_positions(self, king_position):
@@ -1445,15 +1469,18 @@ class ConstrainedGameState(GameState):
         non_moveable_positions = []
         for position in adj_positions:
             occupying_piece = self.get_piece_at_position(position)
-            if occupying_piece is not None:
-                if occupying_piece[0] == side:
-                    non_moveable_positions.append(position) # piece is present at position, therefore king can't move here
-                elif occupying_piece[0] != side and self.determine_if_king_cant_move_here(position, side):
-                    non_moveable_positions.append(position)
+            if occupying_piece is not None and occupying_piece[0] == side:
+                #print(f"King can't move to {self.position_to_string(position)}, because of own piece")
+                non_moveable_positions.append(position) # piece is present at position, therefore king can't move here
             elif self.determine_if_king_cant_move_here(position, side):
-                print(f"King can't move to {self.position_to_string(position)}, because of check")
+                #print(f"King can't move to {self.position_to_string(position)}, because of check")
                 non_moveable_positions.append(position) # king is in check here, therefore king can't move here
-        if adj_positions == non_moveable_positions:
+
+        # If all adjacent positions are non-moveable, the king cannot move
+        adj_squares = [self.position_to_string(position) for position in adj_positions]
+        non_movable_squares = [self.position_to_string(position) for position in non_moveable_positions]
+        print(f"Adjacent squares: {adj_squares}\n Non-moveable squares: {non_movable_squares}")
+        if set(adj_positions) == set(non_moveable_positions):
             return False
         else:
             return True
