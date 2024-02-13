@@ -20,7 +20,7 @@ class GameInterface(ConstrainedGameState):
     def __init__(self):
         super().__init__()
         self.set_start_position()
-        self.width = self.height = 512
+        self.width = self.height = 768
         self.dimensions = 8
         self.square_size = self.height // self.dimensions
         self.fps = 15
@@ -89,6 +89,7 @@ class GameInterface(ConstrainedGameState):
                         mouse_x, mouse_y = pg.mouse.get_pos()
                         col = mouse_x // self.square_size
                         row = mouse_y // self.square_size
+
                         if not self.first_click:
                             self.first_click_pos = self.pixel_to_position(mouse_x, mouse_y)
                             self.first_click = True
@@ -97,21 +98,26 @@ class GameInterface(ConstrainedGameState):
                             second_click_pos = self.pixel_to_position(mouse_x, mouse_y)
                             side = 'w' if self.white_to_move else 'b'
                             king_position = self.get_king_position(side)
+
                             if self.first_click_pos == king_position:
-                                # Check if the move is a kingside or queenside castling
-                                if col == 6:  # Kingside castling
+                                # Adjust column indices based on the side to move
+                                kingside_col = 6 if self.white_to_move else 1
+                                queenside_col = 2 if self.white_to_move else 5
+
+                                if col == kingside_col:  # Kingside castling
                                     if side == 'w' and self.w_castle_k:
                                         self.move_piece(piece="OO")
                                     elif side == 'b' and self.b_castle_k:
+                                        #print("Black kingside castling")
                                         self.move_piece(piece="OO")
                                     else:
                                         # Regular move
                                         self.move_piece(self.position_to_string(self.first_click_pos), self.position_to_string(second_click_pos))
-                                        
-                                elif col == 2:  # Queenside castling
+                                elif col == queenside_col:  # Queenside castling
                                     if side == 'w' and self.w_castle_q:
                                         self.move_piece(piece="OOO")
                                     elif side == 'b' and self.b_castle_q:
+                                        #print("Black queenside castling")
                                         self.move_piece(piece="OOO")
                                     else:
                                         # Regular move
@@ -122,6 +128,7 @@ class GameInterface(ConstrainedGameState):
                             else:
                                 # Regular move
                                 self.move_piece(self.position_to_string(self.first_click_pos), self.position_to_string(second_click_pos))
+
                             self.first_click = False
                             self.highlighted_square = None
                 self.render_pawn_promotion()         
@@ -185,6 +192,16 @@ class GameInterface(ConstrainedGameState):
                         self.screen.blit(self.images[piece], pg.Rect(flipped_col * self.square_size, flipped_row * self.square_size, self.square_size, self.square_size))
                         
     def highlight_square(self, square):
+        """
+        Highlights a square on the screen.
+
+        Parameters:
+            self (object): The object instance
+            square (tuple): The coordinates of the square to highlight
+
+        Returns:
+            None
+        """
         row, col = square
         pg.draw.rect(self.screen, (255, 0, 0), (col * self.square_size, row * self.square_size, self.square_size, self.square_size), 3)
     
@@ -206,7 +223,7 @@ class GameInterface(ConstrainedGameState):
         text_rect = text.get_rect(center=(self.width // 2, self.height // 2))  # Center the text
         
         self.screen.blit(text, text_rect)  # Draw the text on the screen
-        pg.display.flip()
+        pg.display.update()
     
     def render_pawn_promotion(self):
         """
@@ -216,8 +233,8 @@ class GameInterface(ConstrainedGameState):
             return
 
         # Define the promotion pane dimensions
-        pane_width = 512
-        pane_height = 512
+        pane_width = pane_height = 768
+        
 
         # Create a new surface for the promotion pane
         promotion_surface = pg.Surface((pane_width, pane_height))
