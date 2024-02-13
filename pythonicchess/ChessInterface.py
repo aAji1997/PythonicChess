@@ -32,6 +32,14 @@ class GameInterface(ConstrainedGameState):
         self.reset = False
         
     def pixel_to_position(self, x, y):
+        """
+        Converts pixel coordinates to board position and returns the position index.
+        Args:
+            x: The x-coordinate of the pixel.
+            y: The y-coordinate of the pixel.
+        Returns:
+            The index of the board position corresponding to the pixel coordinates.
+        """
         if self.white_to_move:
             row = y // self.square_size
             col = x // self.square_size
@@ -42,11 +50,19 @@ class GameInterface(ConstrainedGameState):
         return position
 
     def load_images(self):
+        """
+        Load images for each piece on the board and store them in the 'images' dictionary.
+        """
         pieces = list(self.board.keys())
         for piece in pieces:
             self.images[piece] = pg.transform.scale(pg.image.load(f'/home/hal/ssdlink/PythonicChess/pythonicchess/images/{piece}.png'), (self.square_size, self.square_size))
     
     def run(self):
+        """
+        The run function initializes the game, handles user input, and updates the game state. 
+        It contains a game loop that checks for user input events, such as mouse clicks and quitting the game. 
+        It also handles exceptions and prints any errors that occur during execution.
+        """
         pg.init()
         clock = pg.time.Clock()
         running = True
@@ -121,13 +137,24 @@ class GameInterface(ConstrainedGameState):
         self.draw_pieces()
 
     def reset_game(self):
+        """
+        Reset the game state, display end game message if checkmated or drawn, sleep for 1 second,
+        and then initialize the game with the start position.
+        """
         self.draw_game_state()
+        if self.checkmated:
+            self.display_end_game_message('c')
+        elif self.drawn:
+            self.display_end_game_message('d')
         sleep(1)
         self.__init__()   
         self.set_start_position()
         
         
     def draw_board(self):
+        """
+        Draw the board on the screen using Pygame, with alternating colors for the squares.
+        """
         colors = [pg.Color("white"), pg.Color(0, 100, 0)]
         for i in range(self.dimensions):
             for j in range(self.dimensions):
@@ -139,6 +166,12 @@ class GameInterface(ConstrainedGameState):
                     pg.draw.rect(self.screen, color, ((7-i) * self.square_size, (7-j) * self.square_size, self.square_size, self.square_size))
     
     def draw_pieces(self):
+        """
+        Draws the pieces on the board based on the current state of the game. 
+        This function iterates through each piece and its corresponding bitboard to determine the position of each piece on the screen. 
+        If the white player is to move, the pieces are drawn normally. 
+        If the black player is to move, the pieces are drawn with their positions flipped to reflect the black player's perspective. 
+        """
         for piece, bitboard in self.board.items():
             for i in range(64):
                 if (bitboard >> i) & 1:  # if the i-th bit is set
@@ -155,7 +188,30 @@ class GameInterface(ConstrainedGameState):
         row, col = square
         pg.draw.rect(self.screen, (255, 0, 0), (col * self.square_size, row * self.square_size, self.square_size, self.square_size), 3)
     
+    def display_end_game_message(self, end_state):
+        """
+        Displays an end game message ("Draw" or "Checkmate") on the Pygame window.
+        
+        :param end_state: A string indicating the end state of the game ('c' for checkmate, 'd' for draw).
+        """
+        font = pg.font.SysFont(name='Arial', size=48)  # You can choose a different font and size
+        if end_state == 'c':
+            message = 'Checkmate'
+        elif end_state == 'd':
+            message = 'Draw'
+        else:
+            return  # Invalid end_state, do nothing
+        
+        text = font.render(message, True, pg.Color('Red'))  # Render the text in red
+        text_rect = text.get_rect(center=(self.width // 2, self.height // 2))  # Center the text
+        
+        self.screen.blit(text, text_rect)  # Draw the text on the screen
+        pg.display.flip()
+    
     def render_pawn_promotion(self):
+        """
+        Render the pawn promotion window and handle piece selection events.
+        """
         if not self.promoting:
             return
 
