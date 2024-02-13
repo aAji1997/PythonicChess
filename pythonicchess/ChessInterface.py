@@ -96,6 +96,11 @@ class GameInterface(ConstrainedGameState):
                             self.highlighted_square = (row, col)
                         else:
                             second_click_pos = self.pixel_to_position(mouse_x, mouse_y)
+                            if second_click_pos == self.first_click_pos:
+                                self.first_click = False
+                                self.first_click_pos = None
+                                self.highlighted_square = None
+                                continue
                             side = 'w' if self.white_to_move else 'b'
                             king_position = self.get_king_position(side)
 
