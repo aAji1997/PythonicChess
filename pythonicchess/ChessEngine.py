@@ -1477,9 +1477,9 @@ class ConstrainedGameState(GameState):
                 non_moveable_positions.append(position) # king is in check here, therefore king can't move here
 
         # If all adjacent positions are non-moveable, the king cannot move
-        adj_squares = [self.position_to_string(position) for position in adj_positions]
-        non_movable_squares = [self.position_to_string(position) for position in non_moveable_positions]
-        print(f"Adjacent squares: {adj_squares}\n Non-moveable squares: {non_movable_squares}")
+        #adj_squares = [self.position_to_string(position) for position in adj_positions]
+        #non_movable_squares = [self.position_to_string(position) for position in non_moveable_positions]
+        #print(f"Adjacent squares: {adj_squares}\n Non-moveable squares: {non_movable_squares}")
         if set(adj_positions) == set(non_moveable_positions):
             return False
         else:
