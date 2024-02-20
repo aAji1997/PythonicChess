@@ -1,4 +1,4 @@
-from ChessEngine import ConstrainedGameState
+from ChessLogic import ConstrainedGameState
 import numpy as np
 import pygame as pg
 import sys
