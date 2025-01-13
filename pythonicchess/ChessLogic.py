@@ -906,7 +906,7 @@ class ConstrainedGameState(GameState):
                 current_file += direction
                 if 0 <= current_file < 8:
                     position = rank * 8 + current_file
-                    piece = self.get_piece_at_position(position)
+                    piece = self.get_piece_at_position(position=position)
                     if piece:
                         if piece in rook_queen_pieces and not self.get_rook_obstacles(from_position=position, to_position=king_position):
                             return position  # Return the position of the checking piece
