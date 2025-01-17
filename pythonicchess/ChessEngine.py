@@ -1024,12 +1024,15 @@ class GameEngine(ConstrainedGameState):
         start_time = time.time()
         best_move = None
         
+        # Determine if engine is maximizing based on whose turn it is
+        maximizing_player = self.white_to_move
+        
         for depth in range(1, 7):  # Start with depth 1, increase gradually
             if time.time() - start_time > max_time:
                 break
                 
             try:
-                _, move = self.minmax(board, depth, float('-inf'), float('inf'), False)
+                _, move = self.minmax(board, depth, float('-inf'), float('inf'), maximizing_player)
                 if move:  # Only update if we found a valid move
                     best_move = move
             except Exception:
