@@ -4,6 +4,8 @@ import pygame as pg
 import sys
 import signal
 from time import sleep
+from ChessEngine import GameEngine
+from copy import deepcopy
 
 def signal_handler(sig, frame):
     print('You pressed Ctrl+C or another exit command!')
@@ -31,6 +33,9 @@ class GameInterface(ConstrainedGameState):
         self.first_click_pos = None
         self.reset = False
         self.highlighted_moves = set()  # Store positions of valid moves to highlight
+        self.game_mode = None  # 'human' or 'computer'
+        self.engine = GameEngine()  # Initialize the chess engine
+        self.computer_thinking = False
         
     def pixel_to_position(self, x, y):
         """
@@ -56,21 +61,164 @@ class GameInterface(ConstrainedGameState):
         pieces = list(self.board.keys())
         for piece in pieces:
             self.images[piece] = pg.transform.scale(pg.image.load(f'/home/hal/ssdlink/projs/PythonicChess/pythonicchess/images/{piece}.png'), (self.square_size, self.square_size))
+
+    def show_game_mode_selection(self):
+        """
+        Display the game mode selection screen and return the selected mode.
+        """
+        # Colors
+        WHITE = (255, 255, 255)
+        BLACK = (0, 0, 0)
+        GREEN = (0, 100, 0)
+        HOVER_GREEN = (0, 120, 0)
+        
+        # Create buttons
+        button_width = 300
+        button_height = 80
+        button_x = self.width // 2 - button_width // 2
+        human_button_y = self.height // 2 - button_height - 20
+        computer_button_y = self.height // 2 + 20
+        
+        # Font
+        pg.font.init()
+        font = pg.font.SysFont('Arial', 32)
+        title_font = pg.font.SysFont('Arial', 48)
+        
+        # Title text
+        title = title_font.render('Select Game Mode', True, BLACK)
+        title_rect = title.get_rect(center=(self.width // 2, self.height // 3))
+        
+        while True:
+            mouse_pos = pg.mouse.get_pos()
+            
+            # Check if mouse is hovering over buttons
+            human_hover = button_x <= mouse_pos[0] <= button_x + button_width and human_button_y <= mouse_pos[1] <= human_button_y + button_height
+            computer_hover = button_x <= mouse_pos[0] <= button_x + button_width and computer_button_y <= mouse_pos[1] <= computer_button_y + button_height
+            
+            for event in pg.event.get():
+                if event.type == pg.QUIT:
+                    pg.quit()
+                    sys.exit()
+                if event.type == pg.MOUSEBUTTONDOWN:
+                    if human_hover:
+                        return 'human'
+                    elif computer_hover:
+                        return 'computer'
+            
+            # Draw screen
+            self.screen.fill(WHITE)
+            
+            # Draw title
+            self.screen.blit(title, title_rect)
+            
+            # Draw buttons
+            pg.draw.rect(self.screen, HOVER_GREEN if human_hover else GREEN, (button_x, human_button_y, button_width, button_height))
+            pg.draw.rect(self.screen, HOVER_GREEN if computer_hover else GREEN, (button_x, computer_button_y, button_width, button_height))
+            
+            # Draw button text
+            human_text = font.render('Human vs Human', True, WHITE)
+            computer_text = font.render('Human vs Computer', True, WHITE)
+            
+            human_text_rect = human_text.get_rect(center=(self.width // 2, human_button_y + button_height // 2))
+            computer_text_rect = computer_text.get_rect(center=(self.width // 2, computer_button_y + button_height // 2))
+            
+            self.screen.blit(human_text, human_text_rect)
+            self.screen.blit(computer_text, computer_text_rect)
+            
+            pg.display.update()
+
+    def make_computer_move(self):
+        """
+        Calculate and make the computer's move using the chess engine.
+        """
+        if not self.white_to_move and not (self.checkmated or self.drawn):
+            self.computer_thinking = True
+            print("\n=== Debug: Starting computer move calculation ===")
+            print(f"Interface board type before sync: {type(self.board)}")
+            print(f"Interface board keys before sync: {list(self.board.keys())}")
+            
+            # Draw the board with a "thinking" indicator
+            self.draw_game_state()
+            self.display_thinking_message()
+            pg.display.update()
+            
+            # Sync all necessary game state with the engine
+            self.engine.board = deepcopy(self.board)
+            print(f"Engine board type after sync: {type(self.engine.board)}")
+            print(f"Engine board keys after sync: {list(self.engine.board.keys())}")
+            
+            self.engine.white_to_move = self.white_to_move
+            self.engine.w_castle_k = self.w_castle_k
+            self.engine.w_castle_q = self.w_castle_q
+            self.engine.b_castle_k = self.b_castle_k
+            self.engine.b_castle_q = self.b_castle_q
+            self.engine.move_log = self.move_log.copy()
+            self.engine.board_states = self.board_states.copy()
+            
+            print("\n=== Debug: About to call minmax ===")
+            print(f"Board type being passed to minmax: {type(self.engine.board)}")
+            if not isinstance(self.engine.board, dict):
+                print(f"WARNING: Board is not a dictionary! It is: {self.engine.board}")
+            
+            # Get the best move from the engine
+            try:
+                _, best_move = self.engine.minmax(self.engine.board, depth=3, alpha=float('-inf'), beta=float('inf'), maximizing_player=False)
+                print("\n=== Debug: Minmax completed successfully ===")
+            except Exception as e:
+                print(f"\n=== Debug: Error in minmax: {str(e)} ===")
+                print("Stack trace:")
+                import traceback
+                traceback.print_exc()
+                self.computer_thinking = False
+                return
+            
+            if best_move:
+                print(f"\n=== Debug: Best move found: {best_move} ===")
+                piece, from_pos, to_pos, promotion_piece = best_move
+                if promotion_piece:
+                    self.promoted_piece = 'b' + promotion_piece
+                    self.promoting_from_pos = from_pos
+                    self.promoting_to_pos = to_pos
+                    self.promoting = True
+                    self.move_piece(self.position_to_string(from_pos), self.position_to_string(to_pos))
+                else:
+                    self.move_piece(self.position_to_string(from_pos), self.position_to_string(to_pos))
+            else:
+                print("\n=== Debug: No valid move found ===")
+            
+            self.computer_thinking = False
+
+    def display_thinking_message(self):
+        """
+        Display a "Computer is thinking..." message on the screen.
+        """
+        font = pg.font.SysFont('Arial', 36)
+        text = font.render('Computer is thinking...', True, pg.Color('Red'))
+        text_rect = text.get_rect(center=(self.width // 2, 30))
+        self.screen.blit(text, text_rect)
     
     def run(self):
         """
-        The run function initializes the game, handles user input, and updates the game state. 
-        It contains a game loop that checks for user input events, such as mouse clicks and quitting the game. 
-        It also handles exceptions and prints any errors that occur during execution.
+        The run function initializes the game, handles user input, and updates the game state.
         """
         pg.init()
         clock = pg.time.Clock()
+        
+        # Show game mode selection screen
+        self.game_mode = self.show_game_mode_selection()
+        
         running = True
         self.highlighted_square = None
         try:
             while running:
                 if self.reset:
                     self.reset_game()
+                    # Show game mode selection again after reset
+                    self.game_mode = self.show_game_mode_selection()
+                
+                # Make computer move if it's computer's turn
+                if self.game_mode == 'computer':
+                    self.make_computer_move()
                 
                 self.draw_game_state()
                 
@@ -86,12 +234,13 @@ class GameInterface(ConstrainedGameState):
                     
                 if self.highlighted_square:
                     self.highlight_square(self.highlighted_square)
+                    
                 for e in pg.event.get():
                     if e.type == pg.QUIT:
                         running = False
                         pg.quit()
                         sys.exit()
-                    elif e.type == pg.MOUSEBUTTONDOWN:
+                    elif e.type == pg.MOUSEBUTTONDOWN and (self.game_mode == 'human' or self.white_to_move):
                         try:
                             mouse_x, mouse_y = pg.mouse.get_pos()
                             col = mouse_x // self.square_size
@@ -99,7 +248,6 @@ class GameInterface(ConstrainedGameState):
 
                             if not self.first_click:
                                 self.first_click_pos = self.pixel_to_position(mouse_x, mouse_y)
-                                # Get and store valid moves for the clicked piece
                                 try:
                                     self.highlighted_moves = self.get_valid_moves(self.first_click_pos)
                                 except Exception as e:
@@ -115,49 +263,43 @@ class GameInterface(ConstrainedGameState):
                                     self.first_click = False
                                     self.first_click_pos = None
                                     self.highlighted_square = None
-                                    self.highlighted_moves.clear()  # Clear highlighted moves
+                                    self.highlighted_moves.clear()
                                     continue
                                 side = 'w' if self.white_to_move else 'b'
                                 king_position = self.get_king_position(side)
 
                                 if self.first_click_pos == king_position:
-                                    # Adjust column indices based on the side to move
                                     kingside_col = 6 if self.white_to_move else 1
                                     queenside_col = 2 if self.white_to_move else 5
 
-                                    if col == kingside_col:  # Kingside castling
+                                    if col == kingside_col:
                                         if side == 'w' and self.w_castle_k:
                                             self.move_piece(piece="OO")
                                         elif side == 'b' and self.b_castle_k:
-                                            #print("Black kingside castling")
                                             self.move_piece(piece="OO")
                                         else:
-                                            # Regular move
                                             self.move_piece(self.position_to_string(self.first_click_pos), self.position_to_string(second_click_pos))
-                                    elif col == queenside_col:  # Queenside castling
+                                    elif col == queenside_col:
                                         if side == 'w' and self.w_castle_q:
                                             self.move_piece(piece="OOO")
                                         elif side == 'b' and self.b_castle_q:
-                                            #print("Black queenside castling")
                                             self.move_piece(piece="OOO")
                                         else:
-                                            # Regular move
                                             self.move_piece(self.position_to_string(self.first_click_pos), self.position_to_string(second_click_pos))
                                     else:
-                                        # Regular move
                                         self.move_piece(self.position_to_string(self.first_click_pos), self.position_to_string(second_click_pos))
                                 else:
-                                    # Regular move
                                     self.move_piece(self.position_to_string(self.first_click_pos), self.position_to_string(second_click_pos))
 
                                 self.first_click = False
                                 self.highlighted_square = None
-                                self.highlighted_moves.clear()  # Clear highlighted moves after move is made
+                                self.highlighted_moves.clear()
                         except Exception as e:
                             print(f"Error processing mouse click: {str(e)}")
                             import traceback
                             traceback.print_exc()
-                self.render_pawn_promotion()         
+                            
+                self.render_pawn_promotion()
                 clock.tick(self.fps)
                 pg.display.update()
         except Exception as e:
