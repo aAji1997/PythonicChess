@@ -2,11 +2,14 @@ from ChessLogic import ConstrainedGameState, InvalidBishopMoveError, InvalidRook
 import warnings
 from copy import deepcopy
 import hashlib
+import time
 
 class GameEngine(ConstrainedGameState):
     def __init__(self):
         super().__init__()
         self.max_depth = 50
+        self.history_table = {}  # For move ordering
+        self.killer_moves = [[None] * 50 for _ in range(2)]  # Two killer moves per ply
         
         self.value_map = {"P": 100, "N": 320, "B": 330, "R": 500, "Q": 900, "K": 20000}
         
@@ -883,57 +886,157 @@ class GameEngine(ConstrainedGameState):
             
         return follows_constraint
     
-    def minmax(self, board, depth, alpha, beta, maximizing_player):
-        """Minimax algorithm with alpha-beta pruning to find the best move."""
+    def order_moves(self, moves, board, ply):
+        """Order moves for better alpha-beta pruning efficiency."""
+        move_scores = []
+        for move in moves:
+            score = 0
+            piece, from_pos, to_pos, promotion = move
+            
+            # Prioritize captures based on MVV-LVA (Most Valuable Victim - Least Valuable Aggressor)
+            target_piece = self.get_piece_at_position(board, to_pos)
+            if target_piece:
+                score += self.value_map[target_piece[1]] - self.value_map[piece[1]] // 10
+                
+            # Prioritize promotions
+            if promotion:
+                score += self.value_map[promotion]
+                
+            # Use history heuristic
+            move_key = (piece, from_pos, to_pos)
+            score += self.history_table.get(move_key, 0)
+            
+            # Killer move bonus
+            if move in self.killer_moves[ply % 2]:
+                score += 50
+                
+            move_scores.append((score, move))
+            
+        # Sort moves by score in descending order
+        move_scores.sort(reverse=True)
+        return [move for score, move in move_scores]
+
+    def quiescence_search(self, board, alpha, beta, depth, maximizing_player):
+        """Quiescence search to handle tactical sequences."""
+        stand_pat = self.evaluate_board(board)
+        
+        if stand_pat >= beta:
+            return beta
+        if alpha < stand_pat:
+            alpha = stand_pat
+            
+        if depth == -4:  # Limit quiescence search depth
+            return stand_pat
+            
+        # Get only captures and checks
+        moves = self.get_all_legal_moves('w' if maximizing_player else 'b', board)
+        captures = [move for move in moves if self.get_piece_at_position(board, move[2])]
+        
+        for move in captures:
+            new_board = self.make_move(board, move)
+            if new_board:
+                score = -self.quiescence_search(new_board, -beta, -alpha, depth - 1, not maximizing_player)
+                if score >= beta:
+                    return beta
+                if score > alpha:
+                    alpha = score
+                    
+        return alpha
+
+    def minmax(self, board, depth, alpha, beta, maximizing_player, ply=0):
+        """Enhanced minimax with alpha-beta pruning, move ordering and quiescence."""
         if not isinstance(board, dict):
             return float('-inf') if maximizing_player else float('inf'), None
             
-        if depth == 0 or self.is_game_over(board):
+        if depth == 0:
+            return self.quiescence_search(board, alpha, beta, 0, maximizing_player), None
+            
+        if self.is_game_over(board):
             return self.evaluate_board(board), None
     
+        side = 'w' if maximizing_player else 'b'
+        try:
+            moves = self.get_all_legal_moves(side, board)
+            moves = self.order_moves(moves, board, ply)  # Order moves for better pruning
+        except Exception:
+            return float('-inf') if maximizing_player else float('inf'), None
+            
+        best_move = None
         if maximizing_player:
             max_eval = float('-inf')
-            best_move = None
-            try:
-                moves = self.get_all_legal_moves('w', board)
-            except Exception as e:
-                return max_eval, None
-                
             for move in moves:
                 try:
                     new_board = self.make_move(board, move)
-                    eval, _ = self.minmax(new_board, depth - 1, alpha, beta, False)
+                    eval, _ = self.minmax(new_board, depth - 1, alpha, beta, False, ply + 1)
+                    
                     if eval > max_eval:
                         max_eval = eval
                         best_move = move
+                        
                     alpha = max(alpha, eval)
                     if beta <= alpha:
+                        # Store killer move
+                        if not self.get_piece_at_position(board, move[2]):  # If not a capture
+                            self.killer_moves[ply % 2][1] = self.killer_moves[ply % 2][0]
+                            self.killer_moves[ply % 2][0] = move
                         break
-                except Exception as e:
+                        
+                except Exception:
                     continue
+                    
+            # Update history table for the best move
+            if best_move:
+                move_key = (best_move[0], best_move[1], best_move[2])
+                self.history_table[move_key] = self.history_table.get(move_key, 0) + depth * depth
+                
             return max_eval, best_move
         else:
             min_eval = float('inf')
-            best_move = None
-            try:
-                moves = self.get_all_legal_moves('b', board)
-            except Exception as e:
-                return min_eval, None
-                
             for move in moves:
                 try:
                     new_board = self.make_move(board, move)
-                    eval, _ = self.minmax(new_board, depth - 1, alpha, beta, True)
+                    eval, _ = self.minmax(new_board, depth - 1, alpha, beta, True, ply + 1)
+                    
                     if eval < min_eval:
                         min_eval = eval
                         best_move = move
+                        
                     beta = min(beta, eval)
                     if beta <= alpha:
+                        # Store killer move
+                        if not self.get_piece_at_position(board, move[2]):
+                            self.killer_moves[ply % 2][1] = self.killer_moves[ply % 2][0]
+                            self.killer_moves[ply % 2][0] = move
                         break
-                except Exception as e:
+                        
+                except Exception:
                     continue
+                    
+            # Update history table for the best move
+            if best_move:
+                move_key = (best_move[0], best_move[1], best_move[2])
+                self.history_table[move_key] = self.history_table.get(move_key, 0) + depth * depth
+                
             return min_eval, best_move
-    
+
+    def iterative_deepening_search(self, board, max_time=5.0):
+        """Iterative deepening search with time control."""
+        start_time = time.time()
+        best_move = None
+        
+        for depth in range(1, 7):  # Start with depth 1, increase gradually
+            if time.time() - start_time > max_time:
+                break
+                
+            try:
+                _, move = self.minmax(board, depth, float('-inf'), float('inf'), False)
+                if move:  # Only update if we found a valid move
+                    best_move = move
+            except Exception:
+                break
+                
+        return best_move
+
     def is_game_over(self, board):
         """Check if the game is over (checkmate or stalemate)."""
         if not isinstance(board, dict):

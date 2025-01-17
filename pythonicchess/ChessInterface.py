@@ -134,8 +134,6 @@ class GameInterface(ConstrainedGameState):
         if not self.white_to_move and not (self.checkmated or self.drawn):
             self.computer_thinking = True
             print("\n=== Debug: Starting computer move calculation ===")
-            print(f"Interface board type before sync: {type(self.board)}")
-            print(f"Interface board keys before sync: {list(self.board.keys())}")
             
             # Draw the board with a "thinking" indicator
             self.draw_game_state()
@@ -144,9 +142,6 @@ class GameInterface(ConstrainedGameState):
             
             # Sync all necessary game state with the engine
             self.engine.board = deepcopy(self.board)
-            print(f"Engine board type after sync: {type(self.engine.board)}")
-            print(f"Engine board keys after sync: {list(self.engine.board.keys())}")
-            
             self.engine.white_to_move = self.white_to_move
             self.engine.w_castle_k = self.w_castle_k
             self.engine.w_castle_q = self.w_castle_q
@@ -155,17 +150,12 @@ class GameInterface(ConstrainedGameState):
             self.engine.move_log = self.move_log.copy()
             self.engine.board_states = self.board_states.copy()
             
-            print("\n=== Debug: About to call minmax ===")
-            print(f"Board type being passed to minmax: {type(self.engine.board)}")
-            if not isinstance(self.engine.board, dict):
-                print(f"WARNING: Board is not a dictionary! It is: {self.engine.board}")
-            
-            # Get the best move from the engine
+            # Get the best move using iterative deepening
             try:
-                _, best_move = self.engine.minmax(self.engine.board, depth=3, alpha=float('-inf'), beta=float('inf'), maximizing_player=False)
-                print("\n=== Debug: Minmax completed successfully ===")
+                best_move = self.engine.iterative_deepening_search(self.engine.board, max_time=5.0)
+                print("\n=== Debug: Search completed successfully ===")
             except Exception as e:
-                print(f"\n=== Debug: Error in minmax: {str(e)} ===")
+                print(f"\n=== Debug: Error in search: {str(e)} ===")
                 print("Stack trace:")
                 import traceback
                 traceback.print_exc()
