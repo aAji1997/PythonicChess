@@ -8,7 +8,85 @@ class GameEngine(ConstrainedGameState):
         super().__init__()
         self.max_depth = 50
         
-        self.value_map = {"P": 1, "N": 3, "B": 3, "R": 5, "Q": 9, "K": 1000}
+        self.value_map = {"P": 100, "N": 320, "B": 330, "R": 500, "Q": 900, "K": 20000}
+        
+        # Piece-square tables for positional evaluation
+        self.pawn_table = [
+            0,  0,  0,  0,  0,  0,  0,  0,
+            50, 50, 50, 50, 50, 50, 50, 50,
+            10, 10, 20, 30, 30, 20, 10, 10,
+            5,  5, 10, 25, 25, 10,  5,  5,
+            0,  0,  0, 20, 20,  0,  0,  0,
+            5, -5,-10,  0,  0,-10, -5,  5,
+            5, 10, 10,-20,-20, 10, 10,  5,
+            0,  0,  0,  0,  0,  0,  0,  0
+        ]
+        
+        self.knight_table = [
+            -50,-40,-30,-30,-30,-30,-40,-50,
+            -40,-20,  0,  0,  0,  0,-20,-40,
+            -30,  0, 10, 15, 15, 10,  0,-30,
+            -30,  5, 15, 20, 20, 15,  5,-30,
+            -30,  0, 15, 20, 20, 15,  0,-30,
+            -30,  5, 10, 15, 15, 10,  5,-30,
+            -40,-20,  0,  5,  5,  0,-20,-40,
+            -50,-40,-30,-30,-30,-30,-40,-50
+        ]
+        
+        self.bishop_table = [
+            -20,-10,-10,-10,-10,-10,-10,-20,
+            -10,  0,  0,  0,  0,  0,  0,-10,
+            -10,  0,  5, 10, 10,  5,  0,-10,
+            -10,  5,  5, 10, 10,  5,  5,-10,
+            -10,  0, 10, 10, 10, 10,  0,-10,
+            -10, 10, 10, 10, 10, 10, 10,-10,
+            -10,  5,  0,  0,  0,  0,  5,-10,
+            -20,-10,-10,-10,-10,-10,-10,-20
+        ]
+        
+        self.rook_table = [
+            0,  0,  0,  0,  0,  0,  0,  0,
+            5, 10, 10, 10, 10, 10, 10,  5,
+            -5,  0,  0,  0,  0,  0,  0, -5,
+            -5,  0,  0,  0,  0,  0,  0, -5,
+            -5,  0,  0,  0,  0,  0,  0, -5,
+            -5,  0,  0,  0,  0,  0,  0, -5,
+            -5,  0,  0,  0,  0,  0,  0, -5,
+            0,  0,  0,  5,  5,  0,  0,  0
+        ]
+        
+        self.queen_table = [
+            -20,-10,-10, -5, -5,-10,-10,-20,
+            -10,  0,  0,  0,  0,  0,  0,-10,
+            -10,  0,  5,  5,  5,  5,  0,-10,
+            -5,  0,  5,  5,  5,  5,  0, -5,
+            0,  0,  5,  5,  5,  5,  0, -5,
+            -10,  5,  5,  5,  5,  5,  0,-10,
+            -10,  0,  5,  0,  0,  0,  0,-10,
+            -20,-10,-10, -5, -5,-10,-10,-20
+        ]
+        
+        self.king_middle_table = [
+            -30,-40,-40,-50,-50,-40,-40,-30,
+            -30,-40,-40,-50,-50,-40,-40,-30,
+            -30,-40,-40,-50,-50,-40,-40,-30,
+            -30,-40,-40,-50,-50,-40,-40,-30,
+            -20,-30,-30,-40,-40,-30,-30,-20,
+            -10,-20,-20,-20,-20,-20,-20,-10,
+            20, 20,  0,  0,  0,  0, 20, 20,
+            20, 30, 10,  0,  0, 10, 30, 20
+        ]
+        
+        self.king_end_table = [
+            -50,-40,-30,-20,-20,-30,-40,-50,
+            -30,-20,-10,  0,  0,-10,-20,-30,
+            -30,-10, 20, 30, 30, 20,-10,-30,
+            -30,-10, 30, 40, 40, 30,-10,-30,
+            -30,-10, 30, 40, 40, 30,-10,-30,
+            -30,-10, 20, 30, 30, 20,-10,-30,
+            -30,-30,  0,  0,  0,  0,-30,-30,
+            -50,-30,-30,-30,-30,-30,-30,-50
+        ]
     
     def set_piece(self, piece, position, board):
         """Set a piece on the board, handling captures properly."""
@@ -620,13 +698,127 @@ class GameEngine(ConstrainedGameState):
 
         
     def evaluate_board(self, board):
+        """Enhanced evaluation function considering material, position, and game phase."""
+        if not isinstance(board, dict):
+            return 0
+            
         score = 0
+        material_score = 0
+        position_score = 0
+        
+        # Count material and get game phase
+        total_material = 0
         for piece, bitboard in board.items():
+            piece_count = bin(bitboard).count('1')
+            piece_value = self.value_map[piece[1]]
+            
             if piece[0] == 'w':
-                score += self.value_map[piece[1]]
+                material_score += piece_value * piece_count
             else:
-                score -= self.value_map[piece[1]]
+                material_score -= piece_value * piece_count
+                
+            if piece[1] not in ['K', 'P']:
+                total_material += piece_value * piece_count
+        
+        # Determine game phase (0 = endgame, 1 = opening/middlegame)
+        max_material = 2 * (self.value_map['Q'] + 2 * self.value_map['R'] + 
+                          2 * self.value_map['B'] + 2 * self.value_map['N'])
+        game_phase = min(1.0, total_material / max_material)
+        
+        # Evaluate piece positions
+        for piece, bitboard in board.items():
+            piece_type = piece[1]
+            is_white = piece[0] == 'w'
+            
+            position = 0
+            temp_bitboard = bitboard
+            while temp_bitboard:
+                if temp_bitboard & 1:
+                    # Get position score based on piece type
+                    if piece_type == 'P':
+                        pos_score = self.pawn_table[63 - position if is_white else position]
+                    elif piece_type == 'N':
+                        pos_score = self.knight_table[63 - position if is_white else position]
+                    elif piece_type == 'B':
+                        pos_score = self.bishop_table[63 - position if is_white else position]
+                    elif piece_type == 'R':
+                        pos_score = self.rook_table[63 - position if is_white else position]
+                    elif piece_type == 'Q':
+                        pos_score = self.queen_table[63 - position if is_white else position]
+                    elif piece_type == 'K':
+                        middlegame_score = self.king_middle_table[63 - position if is_white else position]
+                        endgame_score = self.king_end_table[63 - position if is_white else position]
+                        pos_score = int(game_phase * middlegame_score + (1 - game_phase) * endgame_score)
+                    
+                    position_score += pos_score if is_white else -pos_score
+                    
+                temp_bitboard >>= 1
+                position += 1
+        
+        # Combine scores with weights
+        score = material_score + (position_score // 10)
+        
+        # Additional evaluation factors
+        score += self.evaluate_pawn_structure(board) * 10
+        score += self.evaluate_mobility(board) * 5
+        
         return score
+        
+    def evaluate_pawn_structure(self, board):
+        """Evaluate pawn structure including doubled, isolated, and passed pawns."""
+        score = 0
+        
+        # Get pawn positions
+        white_pawns = []
+        black_pawns = []
+        wp_bitboard = board.get('wP', 0)
+        bp_bitboard = board.get('bP', 0)
+        
+        position = 0
+        while wp_bitboard:
+            if wp_bitboard & 1:
+                white_pawns.append(position)
+            wp_bitboard >>= 1
+            position += 1
+            
+        position = 0
+        while bp_bitboard:
+            if bp_bitboard & 1:
+                black_pawns.append(position)
+            bp_bitboard >>= 1
+            position += 1
+        
+        # Evaluate doubled pawns
+        for file in range(8):
+            wp_in_file = sum(1 for p in white_pawns if p % 8 == file)
+            bp_in_file = sum(1 for p in black_pawns if p % 8 == file)
+            
+            if wp_in_file > 1:
+                score -= 20 * (wp_in_file - 1)
+            if bp_in_file > 1:
+                score += 20 * (bp_in_file - 1)
+        
+        # Evaluate isolated pawns
+        for file in range(8):
+            wp_adjacent = any(p % 8 in [file-1, file+1] for p in white_pawns if 0 <= p % 8 < 8)
+            bp_adjacent = any(p % 8 in [file-1, file+1] for p in black_pawns if 0 <= p % 8 < 8)
+            
+            wp_in_file = any(p % 8 == file for p in white_pawns)
+            bp_in_file = any(p % 8 == file for p in black_pawns)
+            
+            if wp_in_file and not wp_adjacent:
+                score -= 15
+            if bp_in_file and not bp_adjacent:
+                score += 15
+        
+        return score
+        
+    def evaluate_mobility(self, board):
+        """Evaluate piece mobility (number of legal moves available)."""
+        white_mobility = len(self.get_all_legal_moves('w', board))
+        black_mobility = len(self.get_all_legal_moves('b', board))
+        
+        return white_mobility - black_mobility
 
     def piece_constrainer(self, from_position=0, to_position=0, piece="wP", board=None):
         """
