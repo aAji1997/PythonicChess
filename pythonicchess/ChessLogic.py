@@ -136,6 +136,11 @@ class GameState:
         self.white_to_move = True
         self.move_log = np.array([[-1, -1, -1]], dtype=np.int8)
         
+        print("\n=== Initial Board State ===")
+        print(f"Black rooks: {bin(self.board['bR'])}")
+        print(f"White rooks: {bin(self.board['wR'])}")
+        print("=== End Initial Board State ===\n")
+    
     def get_board(self):
         return self.board
     
@@ -266,50 +271,118 @@ class GameState:
 
         return major_diag_occupancy, minor_diag_occupancy
     
-    def move_piece(self, from_square, to_square, piece=None):
-        # Save the current state of the board
+    def move_piece(self, from_square="", to_square="", piece=None):
+        """
+        Move a piece from one square to another.
+        """
+        # Don't proceed if we don't have both squares for any move
+        if from_square and not to_square:
+            print("Waiting for destination square...")
+            return
+
+        old_self = ConstrainedGameState()
         old_board = self.board.copy()
-        old_move_log = self.move_log.copy()
-        old_white_to_move = self.white_to_move
-
+        for attr, value in vars(self).items():
+            if isinstance(value, (bool, list, np.ndarray)):
+                setattr(old_self, attr, deepcopy(value))
+                
+        # Convert single letter piece to full piece name with color
+        if piece is not None and len(piece) == 1:
+            if self.white_to_move:
+                piece = 'w' + piece
+            else:
+                piece = 'b' + piece
+                
+        # Early check for correct turn
+        if piece and not "O" in piece:  # Skip this check for castling notation (OO/OOO)
+            is_white_piece = piece.startswith('w')
+            if (is_white_piece and not self.white_to_move) or (not is_white_piece and self.white_to_move):
+                raise ValueError(f"Not {piece[0]}'s turn to move")
+                
         try:
-            # Convert the squares to positions
-            from_position = self.string_to_position(from_square)
-            to_position = self.string_to_position(to_square)
-
-            # Determine the color and type of the piece at the from_position
-            moving_piece = None
-            for p, bitboard in self.board.items():
-                if bitboard & (1 << from_position):
-                    if piece is None or p[1] == piece:
-                        moving_piece = p
-                        break
-            if moving_piece is None:
-                raise ValueError(f"No {piece} at {from_square}.")
-
-            # Clear the old position
-            self.clear_piece(moving_piece, from_position)
-
-            # Set the new position
-            self.set_piece(moving_piece, to_position)
-
-            # toggle self.white_to_move
-            self.white_to_move = not self.white_to_move
-
-            # log the move
-            move_array = np.array([self.piece_enum[moving_piece], from_position, to_position], dtype=np.int8)
-            self.move_log = np.vstack([self.move_log, move_array])
-            if self.first_move:
-                self.move_log = self.move_log[1:]
-                self.first_move = False
-
+            if self.piece_castle_conditional(piece):
+                from_position = self.string_to_position(from_square)
+                to_position = self.string_to_position(to_square)
+                moving_piece = None
+                for p, bitboard in self.board.items():
+                    if bitboard & (1 << from_position):
+                        if piece is None or p == piece:
+                            moving_piece = p
+                            break
+                if moving_piece is None:
+                    raise ValueError(f"No {piece} at {from_square}.")
+                    
+                promotion = False
+                if 'P' in moving_piece and ((moving_piece.startswith('w') and to_position // 8 == 0) or (moving_piece.startswith('b') and to_position // 8 == 7)):
+                    promotion = True
+                    self.promoting = True
+                else:
+                    self.promoting = False
+                    
+                if self.piece_constrainer(from_square, to_square, piece=moving_piece):
+                    # Handle castling move
+                    if moving_piece and moving_piece[1] == 'K' and abs(from_position % 8 - to_position % 8) == 2:
+                        direction = "k" if to_position % 8 > from_position % 8 else "q"
+                        side = moving_piece[0]
+                        self.castling_move(side=side, direction=direction)
+                        self.log_castle(side + ("OO" if direction == "k" else "OOO"))
+                    else:
+                        # Handle regular move
+                        self.clear_piece(moving_piece, from_position)
+                        if not promotion:
+                            self.set_piece(moving_piece, to_position)
+                        if promotion:
+                            self.promoting_from_pos = from_position
+                            self.promoting_to_pos = to_position
+                        
+                    self.king_or_rook_moved(moving_piece, from_square=from_square)
+                    self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
+                    self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
+                    
+                    self.update_board_state()
+                    
+                    # Check if the move was legal by verifying check status
+                    white_check = self.determine_if_checked(side="w")
+                    black_check = self.determine_if_checked(side="b")
+                    
+                    # A move is illegal if it leaves or puts your own king in check
+                    if self.white_to_move and white_check:
+                        raise ValueError("Illegal move. White is still in check or is put in check.")
+                    if not self.white_to_move and black_check:
+                        raise ValueError("Illegal move. Black is still in check or is put in check.")
+                    
+                    # Update check status and evaluate checkmate
+                    self.white_in_check = bool(white_check)
+                    self.black_in_check = bool(black_check)
+                    
+                    # Toggle turn
+                    self.white_to_move = not self.white_to_move
+                    
+                    # Now check for checkmate/stalemate with the new turn state
+                    self.assign_checking_and_final_states()
+                    
+                    if not self.promoting:
+                        move_array = np.array([self.piece_enum[moving_piece], from_position, to_position], dtype=np.int8)
+                        self.move_log = np.vstack([self.move_log, move_array])
+                    if self.first_move:
+                        self.move_log = self.move_log[1:]
+                        self.first_move = False
+                else:
+                    raise ValueError(f"Illegal move from {from_square} to {to_square} for {moving_piece}.")
+            else:
+                if self.piece_constrainer(piece=piece):
+                    self.king_or_rook_moved(moving_piece=piece)
+                    self.castling_logic(piece)
+                    self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
+                    self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
+                    self.update_board_state()
+                    
         except Exception as e:
-            # If an error occurred during the move, revert the board state to the previous state
+            for attr in vars(old_self):
+                setattr(self, attr, getattr(old_self, attr))
             self.board = old_board
-            self.move_log = old_move_log
-            self.white_to_move = old_white_to_move
             print(f"An error occurred while moving the piece: {e}")
-    
+            traceback.print_exc(file=sys.stdout)
     def display_board(self):
         print(self.get_board_representation())
         
@@ -1408,55 +1481,123 @@ class ConstrainedGameState(GameState):
         Returns:
             bool: True if the castling constraints are satisfied, False otherwise.
         """
+        print(f"\n=== Debugging Castling Constraints for {side} {direction}-side ===")
         castle_string_expanded = side + "_castle_" + direction
         castle_status = getattr(self, castle_string_expanded)
-        #print("I've got the castle status", castle_status)
+        print(f"Castle status from attribute {castle_string_expanded}: {castle_status}")
+        
         if not castle_status:
+            print(f"Castling rejected: {castle_string_expanded} is False")
             return False
+            
         if side == "w" and self.white_in_check:
+            print("Castling rejected: White is in check")
             return False
+            
         if side == "b" and self.black_in_check:
+            print("Castling rejected: Black is in check")
             return False
+            
         if self.is_obstructed_while_castling(side=side, direction=direction):
+            print(f"Castling rejected: Path is obstructed for {side} {direction}-side")
             return False
+            
         if self.is_checked_while_castling(side=side, direction=direction):
+            print(f"Castling rejected: King would pass through check for {side} {direction}-side")
             return False
+            
+        print(f"All castling constraints passed for {side} {direction}-side!")
         return True
-    
+
+    def is_obstructed_while_castling(self, side="w", direction="k"):
+      castle_dict = {
+            "wk": ["f1", "g1"],
+            "wq": ["d1", "c1"],
+            "bk": ["f8", "g8"],
+            "bq": ["d8", "c8"]
+        }
+      path_squares = castle_dict[side + direction]
+      print(f"\nChecking castling path obstruction for {side} {direction}-side")
+      print(f"Checking squares: {path_squares}")
+      for square in path_squares:
+          piece = self.get_piece_at_square(square)
+          if piece:
+              print(f"Found obstruction at {square}: {piece}")
+              return True
+      print("No obstructions found in castling path")
+      return False
+
     def king_or_rook_moved(self, moving_piece="", from_square=""):
+            print(f"\n=== Checking piece movement for castling rights ===")
+            print(f"Moving piece: {moving_piece}, from square: {from_square}")
             # Check if any kings have moved or castled
             if 'K' in moving_piece or "OO" in moving_piece or "OOO" in moving_piece:
                 if self.white_to_move and (self.w_castle_k or self.w_castle_q):
-                    #print("White can't castle again")
+                    print("White king has moved or castled - removing castling rights")
                     self.w_castle_k = False
                     self.w_castle_q = False
                 if not self.white_to_move and (self.b_castle_k or self.b_castle_q):
+                    print("Black king has moved or castled - removing castling rights")
                     self.b_castle_k = False
                     self.b_castle_q = False 
             # Check if any rooks have moved
             if self.check_if_rook_moved(side="w", rook_type="k"):
+                print("White kingside rook has moved")
                 self.KR_moved_white = True
                 self.w_castle_k = False
             if self.check_if_rook_moved(side="w", rook_type="q"):
+                print("White queenside rook has moved")
                 self.QR_moved_white = True
                 self.w_castle_q = False
             if self.check_if_rook_moved(side="b", rook_type="k"):
+                print("Black kingside rook has moved")
                 self.KR_moved_black = True
                 self.b_castle_k = False
             if self.check_if_rook_moved(side="b", rook_type="q"):
+                print("Black queenside rook has moved")
                 self.QR_moved_black = True
                 self.b_castle_q = False
             # check if kings have moved
             if "K" in moving_piece:
                 if self.white_to_move and from_square == "e1":
+                    print("White king moved from e1 - removing castling rights")
                     self.K_moved_white = True
                     self.w_castle_k = False
                     self.w_castle_q = False
                 if not self.white_to_move and from_square == "e8":
+                    print("Black king moved from e8 - removing castling rights")
                     self.K_moved_black = True
                     self.b_castle_k = False
                     self.b_castle_q = False
-            
+            print(f"Current castling rights after move:")
+            print(f"White: Kingside={self.w_castle_k}, Queenside={self.w_castle_q}")
+            print(f"Black: Kingside={self.b_castle_k}, Queenside={self.b_castle_q}")
+            print("=== End castling rights check ===\n")
+
+    def check_if_rook_moved(self, side, rook_type):
+        # Define the initial positions for the rooks
+        initial_positions = {
+            'w': {'k': 1 << 63, 'q': 1 << 56},
+            'b': {'k': 1, 'q': 1 << 7}
+        }
+        
+        # Get the current bitboard for the specified rook
+        rook_key = side + 'R'
+        current_rook_bitboard = self.board[rook_key]
+        
+        # Get the initial position for the specified rook
+        initial_rook_position = initial_positions[side][rook_type]
+        
+        # Check if the rook has moved from its initial position
+        has_moved = not (current_rook_bitboard & initial_rook_position)
+        
+        print(f"\nChecking if {side}'s {rook_type}-side rook has moved")
+        print(f"Current rook bitboard: {bin(current_rook_bitboard)}")
+        print(f"Initial position: {bin(initial_rook_position)}")
+        print(f"Has moved: {has_moved}")
+        
+        return has_moved
+    
     def castling_move(self, side="w", direction="k"):
         """
         A function to perform a castling move in chess, based on the side and direction provided.
@@ -1994,7 +2135,22 @@ class ConstrainedGameState(GameState):
             bool: True if the piece follows the constraints, False otherwise.
         """
         follows_constraint = False
+        # First check if it's the right color's turn to move
+        if piece and not "O" in piece:  # Skip this check for castling notation (OO/OOO)
+            is_white_piece = piece.startswith('w')
+            if (is_white_piece and not self.white_to_move) or (not is_white_piece and self.white_to_move):
+                raise ValueError(f"Not {piece[0]}'s turn to move")
+
         if self.white_to_move and piece[0] == "w" or not self.white_to_move and piece[0] == "b" or "O" in piece:
+            # Check for castling first - if the king is moving two squares, it must be a castling attempt
+            if piece and piece[1] == "K" and from_square and to_square:  # Only check for castling if we have both squares
+                from_pos = self.string_to_position(from_square)
+                to_pos = self.string_to_position(to_square)
+                # Check if this is a castling move
+                if abs(from_pos % 8 - to_pos % 8) == 2 and from_square[1] == to_square[1]:
+                    direction = "k" if to_pos % 8 > from_pos % 8 else "q"
+                    side = piece[0]
+                    return self.apply_castling_constraints(side=side, direction=direction)
         
             if piece[1] == "P" or piece == None:
                 follows_constraint = self.apply_pawn_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square), pawn_type=piece[0])
@@ -2030,7 +2186,6 @@ class ConstrainedGameState(GameState):
         else:
             raise ValueError(f"Not the right color to move: {piece}")
             
-
         return follows_constraint
     def piece_castle_conditional(self, piece):
         if piece is None:
@@ -2041,16 +2196,33 @@ class ConstrainedGameState(GameState):
             return True
         
     def move_piece(self, from_square="", to_square="", piece=None):
+        """
+        Move a piece from one square to another.
+        """
+        # Don't proceed if we don't have both squares for any move
+        if from_square and not to_square:
+            print("Waiting for destination square...")
+            return
+
         old_self = ConstrainedGameState()
         old_board = self.board.copy()
         for attr, value in vars(self).items():
             if isinstance(value, (bool, list, np.ndarray)):
                 setattr(old_self, attr, deepcopy(value))
+                
+        # Convert single letter piece to full piece name with color
         if piece is not None and len(piece) == 1:
             if self.white_to_move:
                 piece = 'w' + piece
             else:
                 piece = 'b' + piece
+                
+        # Early check for correct turn
+        if piece and not "O" in piece:  # Skip this check for castling notation (OO/OOO)
+            is_white_piece = piece.startswith('w')
+            if (is_white_piece and not self.white_to_move) or (not is_white_piece and self.white_to_move):
+                raise ValueError(f"Not {piece[0]}'s turn to move")
+                
         try:
             if self.piece_castle_conditional(piece):
                 from_position = self.string_to_position(from_square)
@@ -2063,19 +2235,30 @@ class ConstrainedGameState(GameState):
                             break
                 if moving_piece is None:
                     raise ValueError(f"No {piece} at {from_square}.")
+                    
                 promotion = False
                 if 'P' in moving_piece and ((moving_piece.startswith('w') and to_position // 8 == 0) or (moving_piece.startswith('b') and to_position // 8 == 7)):
                     promotion = True
                     self.promoting = True
                 else:
                     self.promoting = False
+                    
                 if self.piece_constrainer(from_square, to_square, piece=moving_piece):
-                    self.clear_piece(moving_piece, from_position)
-                    if not promotion:
-                        self.set_piece(moving_piece, to_position)
-                    if promotion:
-                        self.promoting_from_pos = from_position
-                        self.promoting_to_pos = to_position
+                    # Handle castling move
+                    if moving_piece and moving_piece[1] == 'K' and abs(from_position % 8 - to_position % 8) == 2:
+                        direction = "k" if to_position % 8 > from_position % 8 else "q"
+                        side = moving_piece[0]
+                        self.castling_move(side=side, direction=direction)
+                        self.log_castle(side + ("OO" if direction == "k" else "OOO"))
+                    else:
+                        # Handle regular move
+                        self.clear_piece(moving_piece, from_position)
+                        if not promotion:
+                            self.set_piece(moving_piece, to_position)
+                        if promotion:
+                            self.promoting_from_pos = from_position
+                            self.promoting_to_pos = to_position
+                        
                     self.king_or_rook_moved(moving_piece, from_square=from_square)
                     self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
                     self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
@@ -2096,7 +2279,7 @@ class ConstrainedGameState(GameState):
                     self.white_in_check = bool(white_check)
                     self.black_in_check = bool(black_check)
                     
-                    # Only toggle white_to_move if the move was legal
+                    # Toggle turn
                     self.white_to_move = not self.white_to_move
                     
                     # Now check for checkmate/stalemate with the new turn state

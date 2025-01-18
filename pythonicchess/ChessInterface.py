@@ -6,6 +6,7 @@ import signal
 from time import sleep
 from ChessEngine import GameEngine
 from copy import deepcopy
+import traceback
 
 def signal_handler(sig, frame):
     print('You pressed Ctrl+C or another exit command!')
@@ -909,15 +910,20 @@ class GameInterface(ConstrainedGameState):
                      self.square_size, self.square_size), 4)
 
     def move_piece(self, from_square=None, to_square=None, piece=None):
-        """Override the move_piece method to handle board flipping in human vs human mode and time control"""
-        # Handle castling moves
-        if piece in ["OO", "OOO"]:
-            # For castling moves, we don't need from_square and to_square
-            super().move_piece(piece=piece)
-        else:
-            # For regular moves, use all parameters
-            super().move_piece(from_square, to_square, piece)
+        """Override move_piece to update PGN moves and handle time control."""
+        # Store the current state to check for captures and checks
+        is_capture = False
+        if piece not in ["OO", "OOO"] and to_square:  # Only check for capture on non-castling moves
+            to_pos = self.string_to_position(to_square)
+            is_capture = self.get_piece_at_position(to_pos) is not None
         
+        # Make the move
+        try:
+            super().move_piece(from_square, to_square, piece)
+        except Exception as e:
+            print(f"An error occurred while moving the piece: {str(e)}")
+            return
+            
         # Handle time control
         if self.time_control:
             current_time = pg.time.get_ticks()
@@ -940,7 +946,37 @@ class GameInterface(ConstrainedGameState):
         # In human vs human mode, flip the board after each move
         if self.game_mode == 'human':
             self.board_orientation = 'w' if self.board_orientation == 'b' else 'b'
-            
+        
+        # If move was successful, update PGN
+        if not self.promoting:  # Don't add to PGN yet if promoting
+            last_move = self.move_log[-1] if self.move_log.size > 0 else None
+            if last_move is not None and last_move[0] != -1:
+                # Handle castling moves
+                if piece in ["OO", "OOO"]:
+                    pgn_move = "O-O" if piece == "OO" else "O-O-O"
+                    if self.checkmated:
+                        pgn_move += '#'
+                    elif self.white_in_check or self.black_in_check:
+                        pgn_move += '+'
+                    self.pgn_moves.append(pgn_move)
+                else:
+                    # Get move details for non-castling moves
+                    piece_type = list(self.piece_enum.keys())[list(self.piece_enum.values()).index(last_move[0])]
+                    from_pos = last_move[1]
+                    to_pos = last_move[2]
+                    
+                    # Convert to PGN and add to list
+                    pgn_move = self.convert_to_pgn(
+                        piece_type,
+                        from_pos,
+                        to_pos,
+                        is_capture=is_capture,
+                        is_check=self.white_in_check or self.black_in_check,
+                        is_checkmate=self.checkmated,
+                        is_promotion=self.promoting
+                    )
+                    self.pgn_moves.append(pgn_move)
+
     def check_time_out(self):
         """
         Check if either player has run out of time.
@@ -1221,38 +1257,6 @@ class GameInterface(ConstrainedGameState):
         self.update_move_display()
         self.move_window.blit(self.screen, (0, 0))
         self.move_window.blit(self.move_surface, (self.width, 0))
-
-    def move_piece(self, from_square=None, to_square=None, piece=None):
-        """Override move_piece to update PGN moves."""
-        # Store the current state to check for captures and checks
-        is_capture = False
-        if to_square:
-            to_pos = self.string_to_position(to_square)
-            is_capture = self.get_piece_at_position(to_pos) is not None
-        
-        # Make the move
-        super().move_piece(from_square, to_square, piece)
-        
-        # If move was successful, update PGN
-        if not self.promoting:  # Don't add to PGN yet if promoting
-            last_move = self.move_log[-1] if self.move_log.size > 0 else None
-            if last_move is not None and last_move[0] != -1:
-                # Get move details
-                piece_type = list(self.piece_enum.keys())[list(self.piece_enum.values()).index(last_move[0])]
-                from_pos = last_move[1]
-                to_pos = last_move[2]
-                
-                # Convert to PGN and add to list
-                pgn_move = self.convert_to_pgn(
-                    piece_type,
-                    from_pos,
-                    to_pos,
-                    is_capture=is_capture,
-                    is_check=self.white_in_check or self.black_in_check,
-                    is_checkmate=self.checkmated,
-                    is_promotion=self.promoting
-                )
-                self.pgn_moves.append(pgn_move)
 
 if __name__ == "__main__":
     game = GameInterface()
