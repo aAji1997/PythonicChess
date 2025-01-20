@@ -30,8 +30,6 @@ def bitscan_forward(bb):
     LSB_64_table = [0, 47, 1, 56, 48, 27, 2, 60, 57, 49, 41, 37, 28, 16, 3, 61, 54, 58, 35, 52, 50, 42, 21, 44, 38, 32, 29, 23, 17, 11, 4, 62, 46, 55, 26, 59, 40, 36, 15, 53, 34, 51, 20, 43, 31, 22, 10, 45, 25, 39, 14, 33, 19, 24, 13, 30, 18, 12, 5, 63]
     return LSB_64_table[t32 & 255]
 class InvalidRookMoveError(Exception):
-
-
     def __init__(self, message="An invalid rook move was attempted."):
         self.message = message
         super().__init__(self.message)
@@ -136,10 +134,7 @@ class GameState:
         self.white_to_move = True
         self.move_log = np.array([[-1, -1, -1]], dtype=np.int8)
         
-        print("\n=== Initial Board State ===")
-        print(f"Black rooks: {bin(self.board['bR'])}")
-        print(f"White rooks: {bin(self.board['wR'])}")
-        print("=== End Initial Board State ===\n")
+
     
     def get_board(self):
         return self.board
@@ -187,9 +182,11 @@ class GameState:
         file = self.files[file_index]
         rank = str(self.ranks[rank_index])
         return file + rank
+    
     def swap_piece_mapping(self, piece_to_char):
         new_map = {k.replace('w', 'temp').replace('b', 'w').replace('temp', 'b'): v for k, v in piece_to_char.items()}
         return new_map
+    
     def get_board_representation(self):
         """
         Returns the board representation as a 2D numpy array. The array represents the current state of the chess board with pieces and empty squares. The piece_to_char dictionary maps piece codes to their corresponding Unicode chess piece characters. The final representation is flipped vertically if it's white's turn to move. Returns:
@@ -336,8 +333,7 @@ class GameState:
                             self.promoting_to_pos = to_position
                         
                     self.king_or_rook_moved(moving_piece, from_square=from_square)
-                    self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
-                    self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
+
                     
                     self.update_board_state()
                     
@@ -373,8 +369,7 @@ class GameState:
                 if self.piece_constrainer(piece=piece):
                     self.king_or_rook_moved(moving_piece=piece)
                     self.castling_logic(piece)
-                    self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
-                    self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
+
                     self.update_board_state()
                     
         except Exception as e:
@@ -390,8 +385,6 @@ class ConstrainedGameState(GameState):
     def __init__(self):
         super().__init__()
         self.board_states = {}
-        self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
-        self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
         self.N_lookup = self.get_all_possible_knight_moves()
         self.B_lookup = self.get_all_possible_bishop_moves()
         self.R_lookup = self.get_all_possible_rook_moves()
@@ -476,16 +469,21 @@ class ConstrainedGameState(GameState):
                     knight_moves[i] &= ~own_pieces
         
         return knight_moves
+    
     def get_all_possible_bishop_moves(self):
         bishop_moves = {}
+        
+        # Pre-calculate piece positions
+        white_pieces = sum(self.board.get('w' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        black_pieces = sum(self.board.get('b' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        
+        # Calculate moves for all squares (needed for checking)
         for i in range(64):
             x, y = divmod(i, 8)
-            
-            # Calculate all theoretically possible bishop moves for this position
             possible_moves_bitboard = 0
-            directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]  # Up-left, up-right, down-left, down-right
+            directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
             
-            # First calculate all theoretically possible moves for this position
+            # Calculate theoretical moves
             for dx, dy in directions:
                 curr_x, curr_y = x + dx, y + dy
                 while 0 <= curr_x < 8 and 0 <= curr_y < 8:
@@ -494,20 +492,13 @@ class ConstrainedGameState(GameState):
                     curr_x += dx
                     curr_y += dy
             
-            # Store all theoretical moves in lookup (needed for checking)
+            # Store theoretical moves
             bishop_moves[i] = possible_moves_bitboard
             
-            # Now filter moves for actual bishops on the board
-            for side in ['w', 'b']:
+            # Filter moves for actual bishops
+            for side, own_pieces, opp_pieces in [('w', white_pieces, black_pieces), 
+                                               ('b', black_pieces, white_pieces)]:
                 if self.board.get(side + 'B', 0) & (1 << i):
-                    # Get own and opponent pieces
-                    own_pieces = 0
-                    opponent_pieces = 0
-                    for piece in ['P', 'R', 'N', 'B', 'Q', 'K']:
-                        own_pieces |= self.board.get(side + piece, 0)
-                        opponent_pieces |= self.board.get(('b' if side == 'w' else 'w') + piece, 0)
-                    
-                    # Recalculate moves considering piece blocking
                     filtered_moves = 0
                     for dx, dy in directions:
                         curr_x, curr_y = x + dx, y + dy
@@ -515,10 +506,8 @@ class ConstrainedGameState(GameState):
                             target_pos = curr_x * 8 + curr_y
                             target_bit = 1 << target_pos
                             
-                            # Stop if we hit any piece (own or opponent)
-                            if target_bit & (own_pieces | opponent_pieces):
-                                # If it's an opponent piece, include it as a valid capture
-                                if target_bit & opponent_pieces:
+                            if target_bit & (own_pieces | opp_pieces):
+                                if target_bit & opp_pieces:
                                     filtered_moves |= target_bit
                                 break
                             
@@ -532,14 +521,18 @@ class ConstrainedGameState(GameState):
 
     def get_all_possible_rook_moves(self):
         rook_moves = {}
+        
+        # Pre-calculate piece positions
+        white_pieces = sum(self.board.get('w' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        black_pieces = sum(self.board.get('b' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        
+        # Calculate moves for all squares (needed for checking)
         for i in range(64):
             x, y = divmod(i, 8)
-            
-            # Calculate all theoretically possible rook moves for this position
             possible_moves_bitboard = 0
             directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]  # Right, left, down, up
             
-            # First calculate all theoretically possible moves for this position
+            # Calculate theoretical moves
             for dx, dy in directions:
                 curr_x, curr_y = x + dx, y + dy
                 while 0 <= curr_x < 8 and 0 <= curr_y < 8:
@@ -548,20 +541,13 @@ class ConstrainedGameState(GameState):
                     curr_x += dx
                     curr_y += dy
             
-            # Store all theoretical moves in lookup (needed for checking)
+            # Store theoretical moves
             rook_moves[i] = possible_moves_bitboard
             
-            # Now filter moves for actual rooks on the board
-            for side in ['w', 'b']:
+            # Filter moves for actual rooks
+            for side, own_pieces, opp_pieces in [('w', white_pieces, black_pieces), 
+                                               ('b', black_pieces, white_pieces)]:
                 if self.board.get(side + 'R', 0) & (1 << i):
-                    # Get own and opponent pieces
-                    own_pieces = 0
-                    opponent_pieces = 0
-                    for piece in ['P', 'R', 'N', 'B', 'Q', 'K']:
-                        own_pieces |= self.board.get(side + piece, 0)
-                        opponent_pieces |= self.board.get(('b' if side == 'w' else 'w') + piece, 0)
-                    
-                    # Recalculate moves considering piece blocking
                     filtered_moves = 0
                     for dx, dy in directions:
                         curr_x, curr_y = x + dx, y + dy
@@ -569,10 +555,8 @@ class ConstrainedGameState(GameState):
                             target_pos = curr_x * 8 + curr_y
                             target_bit = 1 << target_pos
                             
-                            # Stop if we hit any piece (own or opponent)
-                            if target_bit & (own_pieces | opponent_pieces):
-                                # If it's an opponent piece, include it as a valid capture
-                                if target_bit & opponent_pieces:
+                            if target_bit & (own_pieces | opp_pieces):
+                                if target_bit & opp_pieces:
                                     filtered_moves |= target_bit
                                 break
                             
@@ -583,99 +567,22 @@ class ConstrainedGameState(GameState):
                     rook_moves[i] = filtered_moves
         
         return rook_moves
-    def get_all_possible_pawn_moves(self):
-        pawn_moves_w = self.get_all_possible_pawn_moves_for_side('w')
-        pawn_moves_b = self.get_all_possible_pawn_moves_for_side('b')
-        return {**pawn_moves_w, **pawn_moves_b}
-    
-    def get_all_possible_pawn_moves_for_side(self, side):
-        direction = -8 if side == 'w' else 8
-        promotion_rank_mask = 0xFF00000000000000 if side == 'w' else 0xFF
-        double_step_rank_mask = 0xFF00 if side == 'w' else 0xFF000000000000
-        pawn_moves = {}
-        
-        # Get all pieces to calculate empty squares
-        all_pieces = 0
-        own_pieces = 0
-        opponent_pieces = 0
-        
-        # Get own and opponent pieces separately
-        own_side = side
-        opp_side = 'b' if side == 'w' else 'w'
-        for piece in ['P', 'R', 'N', 'B', 'Q', 'K']:
-            own_pieces |= self.board.get(own_side + piece, 0)
-            opponent_pieces |= self.board.get(opp_side + piece, 0)
-        
-        all_pieces = own_pieces | opponent_pieces
-        empty_squares = ~all_pieces
-
-        for position in range(64):
-            possible_moves_bitboard = 0
-            
-            # Handle forward moves based on direction
-            if direction < 0:  # White pawns moving up
-                one_step_forward = ((1 << position) >> abs(direction)) & empty_squares
-                if one_step_forward:
-                    if one_step_forward & promotion_rank_mask:
-                        possible_moves_bitboard |= one_step_forward
-                    else:
-                        possible_moves_bitboard |= one_step_forward
-                        
-                    # Double step moves from starting rank
-                    if position // 8 == 6:  # White pawns start on rank 6 (from 0)
-                        two_step_forward = ((1 << position) >> abs(2 * direction)) & empty_squares & double_step_rank_mask
-                        if two_step_forward:
-                            possible_moves_bitboard |= two_step_forward
-            else:  # Black pawns moving down
-                one_step_forward = ((1 << position) << direction) & empty_squares
-                if one_step_forward:
-                    if one_step_forward & promotion_rank_mask:
-                        possible_moves_bitboard |= one_step_forward
-                    else:
-                        possible_moves_bitboard |= one_step_forward
-                        
-                    # Double step moves from starting rank
-                    if position // 8 == 1:  # Black pawns start on rank 1
-                        two_step_forward = ((1 << position) << (2 * direction)) & empty_squares & double_step_rank_mask
-                        if two_step_forward:
-                            possible_moves_bitboard |= two_step_forward
-            
-            # Handle captures - only allow capturing opponent pieces
-            if direction < 0:  # White pawns
-                if position % 8 > 0:  # Can capture left
-                    left_capture = ((1 << position) >> 9) & opponent_pieces
-                    if left_capture:
-                        possible_moves_bitboard |= left_capture
-                if position % 8 < 7:  # Can capture right
-                    right_capture = ((1 << position) >> 7) & opponent_pieces
-                    if right_capture:
-                        possible_moves_bitboard |= right_capture
-            else:  # Black pawns
-                if position % 8 > 0:  # Can capture left
-                    left_capture = ((1 << position) << 7) & opponent_pieces
-                    if left_capture:
-                        possible_moves_bitboard |= left_capture
-                if position % 8 < 7:  # Can capture right
-                    right_capture = ((1 << position) << 9) & opponent_pieces
-                    if right_capture:
-                        possible_moves_bitboard |= right_capture
-            
-            if possible_moves_bitboard:
-                pawn_moves[position] = possible_moves_bitboard
-        
-        return pawn_moves
 
     def get_all_possible_queen_moves(self):
         queen_moves = {}
+        
+        # Pre-calculate piece positions
+        white_pieces = sum(self.board.get('w' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        black_pieces = sum(self.board.get('b' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        
+        # Calculate moves for all squares (needed for checking)
         for i in range(64):
             x, y = divmod(i, 8)
-            
-            # Calculate all theoretically possible queen moves for this position
             possible_moves_bitboard = 0
             directions = [(0, 1), (0, -1), (1, 0), (-1, 0),  # Rook directions
                          (-1, -1), (-1, 1), (1, -1), (1, 1)] # Bishop directions
             
-            # First calculate all theoretically possible moves for this position
+            # Calculate theoretical moves
             for dx, dy in directions:
                 curr_x, curr_y = x + dx, y + dy
                 while 0 <= curr_x < 8 and 0 <= curr_y < 8:
@@ -684,20 +591,13 @@ class ConstrainedGameState(GameState):
                     curr_x += dx
                     curr_y += dy
             
-            # Store all theoretical moves in lookup (needed for checking)
+            # Store theoretical moves
             queen_moves[i] = possible_moves_bitboard
             
-            # Now filter moves for actual queens on the board
-            for side in ['w', 'b']:
+            # Filter moves for actual queens
+            for side, own_pieces, opp_pieces in [('w', white_pieces, black_pieces), 
+                                               ('b', black_pieces, white_pieces)]:
                 if self.board.get(side + 'Q', 0) & (1 << i):
-                    # Get own and opponent pieces
-                    own_pieces = 0
-                    opponent_pieces = 0
-                    for piece in ['P', 'R', 'N', 'B', 'Q', 'K']:
-                        own_pieces |= self.board.get(side + piece, 0)
-                        opponent_pieces |= self.board.get(('b' if side == 'w' else 'w') + piece, 0)
-                    
-                    # Recalculate moves considering piece blocking
                     filtered_moves = 0
                     for dx, dy in directions:
                         curr_x, curr_y = x + dx, y + dy
@@ -705,10 +605,8 @@ class ConstrainedGameState(GameState):
                             target_pos = curr_x * 8 + curr_y
                             target_bit = 1 << target_pos
                             
-                            # Stop if we hit any piece (own or opponent)
-                            if target_bit & (own_pieces | opponent_pieces):
-                                # If it's an opponent piece, include it as a valid capture
-                                if target_bit & opponent_pieces:
+                            if target_bit & (own_pieces | opp_pieces):
+                                if target_bit & opp_pieces:
                                     filtered_moves |= target_bit
                                 break
                             
@@ -1374,8 +1272,8 @@ class ConstrainedGameState(GameState):
         Updates the game state variables such as white_in_check, black_in_check, checkmated, is_drawn, etc. 
         Also handles user input for resetting the game in case of checkmate, stalemate, threefold repetition, and insufficient material. 
         """
-        print("\n=== Checking Game State ===")
-        print(f"Current turn: {'White' if self.white_to_move else 'Black'} to move")
+        #print("\n=== Checking Game State ===")
+        #print(f"Current turn: {'White' if self.white_to_move else 'Black'} to move")
         
         # Always update both sides' check status
         white_check_pos = self.determine_if_checked(side="w")
@@ -1383,8 +1281,8 @@ class ConstrainedGameState(GameState):
         self.white_in_check = bool(white_check_pos)
         self.black_in_check = bool(black_check_pos)
         
-        print(f"White in check: {self.white_in_check} {'from ' + self.position_to_string(white_check_pos) if white_check_pos else ''}")
-        print(f"Black in check: {self.black_in_check} {'from ' + self.position_to_string(black_check_pos) if black_check_pos else ''}")
+        #print(f"White in check: {self.white_in_check} {'from ' + self.position_to_string(white_check_pos) if white_check_pos else ''}")
+        #print(f"Black in check: {self.black_in_check} {'from ' + self.position_to_string(black_check_pos) if black_check_pos else ''}")
         
         # Check for checkmate - check the side whose turn it is
         if self.white_to_move and self.white_in_check:  # It's White's turn and they're in check
@@ -1417,7 +1315,7 @@ class ConstrainedGameState(GameState):
         if self.is_material_insufficient() and not self.editing:
             self.is_drawn = True
             print("Draw by insufficient material")
-        print("=== End Game State Check ===\n")
+        #print("=== End Game State Check ===\n")
     
     def determine_if_checked_while_castling(self, king_position, side="w"):
         """
@@ -1481,32 +1379,32 @@ class ConstrainedGameState(GameState):
         Returns:
             bool: True if the castling constraints are satisfied, False otherwise.
         """
-        print(f"\n=== Debugging Castling Constraints for {side} {direction}-side ===")
+        #print(f"\n=== Debugging Castling Constraints for {side} {direction}-side ===")
         castle_string_expanded = side + "_castle_" + direction
         castle_status = getattr(self, castle_string_expanded)
-        print(f"Castle status from attribute {castle_string_expanded}: {castle_status}")
+        #print(f"Castle status from attribute {castle_string_expanded}: {castle_status}")
         
         if not castle_status:
-            print(f"Castling rejected: {castle_string_expanded} is False")
+            #print(f"Castling rejected: {castle_string_expanded} is False")
             return False
             
         if side == "w" and self.white_in_check:
-            print("Castling rejected: White is in check")
+            #print("Castling rejected: White is in check")
             return False
             
         if side == "b" and self.black_in_check:
-            print("Castling rejected: Black is in check")
+            #print("Castling rejected: Black is in check")
             return False
             
         if self.is_obstructed_while_castling(side=side, direction=direction):
-            print(f"Castling rejected: Path is obstructed for {side} {direction}-side")
+            #print(f"Castling rejected: Path is obstructed for {side} {direction}-side")
             return False
             
         if self.is_checked_while_castling(side=side, direction=direction):
-            print(f"Castling rejected: King would pass through check for {side} {direction}-side")
+            #print(f"Castling rejected: King would pass through check for {side} {direction}-side")
             return False
             
-        print(f"All castling constraints passed for {side} {direction}-side!")
+        #print(f"All castling constraints passed for {side} {direction}-side!")
         return True
 
     def is_obstructed_while_castling(self, side="w", direction="k"):
@@ -1517,62 +1415,62 @@ class ConstrainedGameState(GameState):
             "bq": ["d8", "c8"]
         }
       path_squares = castle_dict[side + direction]
-      print(f"\nChecking castling path obstruction for {side} {direction}-side")
-      print(f"Checking squares: {path_squares}")
+      #print(f"\nChecking castling path obstruction for {side} {direction}-side")
+      #print(f"Checking squares: {path_squares}")
       for square in path_squares:
           piece = self.get_piece_at_square(square)
           if piece:
               print(f"Found obstruction at {square}: {piece}")
               return True
-      print("No obstructions found in castling path")
+      #print("No obstructions found in castling path")
       return False
 
     def king_or_rook_moved(self, moving_piece="", from_square=""):
-            print(f"\n=== Checking piece movement for castling rights ===")
-            print(f"Moving piece: {moving_piece}, from square: {from_square}")
+            #print(f"\n=== Checking piece movement for castling rights ===")
+            #print(f"Moving piece: {moving_piece}, from square: {from_square}")
             # Check if any kings have moved or castled
             if 'K' in moving_piece or "OO" in moving_piece or "OOO" in moving_piece:
                 if self.white_to_move and (self.w_castle_k or self.w_castle_q):
-                    print("White king has moved or castled - removing castling rights")
+                    #print("White king has moved or castled - removing castling rights")
                     self.w_castle_k = False
                     self.w_castle_q = False
                 if not self.white_to_move and (self.b_castle_k or self.b_castle_q):
-                    print("Black king has moved or castled - removing castling rights")
+                    #print("Black king has moved or castled - removing castling rights")
                     self.b_castle_k = False
                     self.b_castle_q = False 
             # Check if any rooks have moved
             if self.check_if_rook_moved(side="w", rook_type="k"):
-                print("White kingside rook has moved")
+                #print("White kingside rook has moved")
                 self.KR_moved_white = True
                 self.w_castle_k = False
             if self.check_if_rook_moved(side="w", rook_type="q"):
-                print("White queenside rook has moved")
+                #print("White queenside rook has moved")
                 self.QR_moved_white = True
                 self.w_castle_q = False
             if self.check_if_rook_moved(side="b", rook_type="k"):
-                print("Black kingside rook has moved")
+                #print("Black kingside rook has moved")
                 self.KR_moved_black = True
                 self.b_castle_k = False
             if self.check_if_rook_moved(side="b", rook_type="q"):
-                print("Black queenside rook has moved")
+                #print("Black queenside rook has moved")
                 self.QR_moved_black = True
                 self.b_castle_q = False
             # check if kings have moved
             if "K" in moving_piece:
                 if self.white_to_move and from_square == "e1":
-                    print("White king moved from e1 - removing castling rights")
+                    #print("White king moved from e1 - removing castling rights")
                     self.K_moved_white = True
                     self.w_castle_k = False
                     self.w_castle_q = False
                 if not self.white_to_move and from_square == "e8":
-                    print("Black king moved from e8 - removing castling rights")
+                    #print("Black king moved from e8 - removing castling rights")
                     self.K_moved_black = True
                     self.b_castle_k = False
                     self.b_castle_q = False
-            print(f"Current castling rights after move:")
-            print(f"White: Kingside={self.w_castle_k}, Queenside={self.w_castle_q}")
-            print(f"Black: Kingside={self.b_castle_k}, Queenside={self.b_castle_q}")
-            print("=== End castling rights check ===\n")
+            #print(f"Current castling rights after move:")
+            #print(f"White: Kingside={self.w_castle_k}, Queenside={self.w_castle_q}")
+            #print(f"Black: Kingside={self.b_castle_k}, Queenside={self.b_castle_q}")
+            #print("=== End castling rights check ===\n")
 
     def check_if_rook_moved(self, side, rook_type):
         # Define the initial positions for the rooks
@@ -1591,10 +1489,10 @@ class ConstrainedGameState(GameState):
         # Check if the rook has moved from its initial position
         has_moved = not (current_rook_bitboard & initial_rook_position)
         
-        print(f"\nChecking if {side}'s {rook_type}-side rook has moved")
-        print(f"Current rook bitboard: {bin(current_rook_bitboard)}")
-        print(f"Initial position: {bin(initial_rook_position)}")
-        print(f"Has moved: {has_moved}")
+        #print(f"\nChecking if {side}'s {rook_type}-side rook has moved")
+        #print(f"Current rook bitboard: {bin(current_rook_bitboard)}")
+        #print(f"Initial position: {bin(initial_rook_position)}")
+        #print(f"Has moved: {has_moved}")
         
         return has_moved
     
@@ -1779,7 +1677,8 @@ class ConstrainedGameState(GameState):
                     #print(f"King can't move to {self.position_to_string(position)} - square is under attack")
                     non_moveable_positions.append(position)
                 else:
-                    print(f"King can move to {self.position_to_string(position)}")
+                    #print(f"King can move to {self.position_to_string(position)}")
+                    pass
                 
                 # Restore board state
                 self.board = deepcopy(old_board)
@@ -1937,21 +1836,21 @@ class ConstrainedGameState(GameState):
         print(f"\nChecking if {side} is checkmated...")
         checking_piece_position = self.determine_if_checked(side=side)
         if checking_piece_position:
-            print(f"{side} is in check from piece at {self.position_to_string(checking_piece_position)}")
+            #print(f"{side} is in check from piece at {self.position_to_string(checking_piece_position)}")
             print("Checking if king can move...")
             if not self.king_can_move(side=side):
-                print(f"{side}'s king cannot move")
+                #print(f"{side}'s king cannot move")
                 print("Checking if any piece can block or capture...")
                 if self.can_capture_or_block(checking_piece_position, side=side):
-                    print(f"Found a piece that can block or capture - not checkmate")
+                    #print(f"Found a piece that can block or capture - not checkmate")
                     return False
                 else:
                     print(f"No piece can block or capture - CHECKMATE!")
                     return True
             else:
-                print(f"{side}'s king can move - not checkmate")
+                #print(f"{side}'s king can move - not checkmate")
                 return False
-        print(f"{side} is not in check - not checkmate")
+        #print(f"{side} is not in check - not checkmate")
         return False
     
     def side_is_stalemated(self, side="w"):
@@ -2008,120 +1907,7 @@ class ConstrainedGameState(GameState):
         # If none of the conditions are met, return False
         return False
     
-    def get_all_possible_moves_current_pos(self, side, board=None):
-        """
-        Get all possible moves for the current position of the specified side.
-        
-        Args:
-            side (str): The side for which to calculate the possible moves ('w' or 'b').
-            board (dict): Optional board state to check. If None, uses self.board.
-            
-        Returns:
-            dict: A dictionary containing the possible moves for each piece of the specified side.
-        """
-        if board is None:
-            board = self.board
-            
-        possible_moves = {"wP": {}, "wN": {}, "wB": {}, "wR": {}, "wQ": {}, "wK": {}} if side == "w" else {
-            "bP": {}, "bN": {}, "bB": {}, "bR": {}, "bQ": {}, "bK": {}}
-            
-        # Get own and opponent pieces
-        own_pieces = 0
-        opponent_pieces = 0
-        for piece in ['P', 'R', 'N', 'B', 'Q', 'K']:
-            own_pieces |= board.get(side + piece, 0)
-            opponent_pieces |= board.get(('b' if side == 'w' else 'w') + piece, 0)
-        
-        # Get bishop moves
-        bishop_bitboard = board.get(side + 'B', 0)
-        for position in range(64):
-            if bishop_bitboard & (1 << position):
-                possible_moves_bitboard = self.B_lookup[position]
-                # Remove moves to squares occupied by own pieces
-                possible_moves_bitboard &= ~own_pieces
-                if possible_moves_bitboard:
-                    possible_moves[side + 'B'][position] = possible_moves_bitboard
-        
-        # Get knight moves
-        knight_bitboard = board.get(side + 'N', 0)
-        for position in range(64):
-            if knight_bitboard & (1 << position):
-                possible_moves_bitboard = self.N_lookup[position]
-                # Remove moves to squares occupied by own pieces
-                possible_moves_bitboard &= ~own_pieces
-                if possible_moves_bitboard:
-                    possible_moves[side + 'N'][position] = possible_moves_bitboard
-        
-        # Get rook moves
-        rook_bitboard = board.get(side + 'R', 0)
-        for position in range(64):
-            if rook_bitboard & (1 << position):
-                possible_moves_bitboard = self.R_lookup[position]
-                # Remove moves to squares occupied by own pieces
-                possible_moves_bitboard &= ~own_pieces
-                if possible_moves_bitboard:
-                    possible_moves[side + 'R'][position] = possible_moves_bitboard
-        
-        # Get queen moves
-        queen_bitboard = board.get(side + 'Q', 0)
-        for position in range(64):
-            if queen_bitboard & (1 << position):
-                possible_moves_bitboard = self.Q_lookup[position]
-                # Remove moves to squares occupied by own pieces
-                possible_moves_bitboard &= ~own_pieces
-                if possible_moves_bitboard:
-                    possible_moves[side + 'Q'][position] = possible_moves_bitboard
-        
-        # Get king moves
-        king_position = self.get_king_position(board, side)
-        if king_position is not None:
-            possible_moves_bitboard = 0
-            for move in self.get_adjacent_positions(king_position):
-                if not self.determine_if_king_cant_move_here(board, move, side):
-                    move_bit = 1 << move
-                    # Only add move if target square is not occupied by own piece
-                    if not (move_bit & own_pieces):
-                        possible_moves_bitboard |= move_bit
 
-            # Check for castling moves and add them if possible
-            if self.apply_castling_constraints(side, "k", board):  # Kingside castling
-                if side == "w":
-                    possible_moves_bitboard |= (1 << 62)  # g1 for white
-                else:
-                    possible_moves_bitboard |= (1 << 6)   # g8 for black
-            if self.apply_castling_constraints(side, "q", board):  # Queenside castling
-                if side == "w":
-                    possible_moves_bitboard |= (1 << 58)  # c1 for white
-                else:
-                    possible_moves_bitboard |= (1 << 2)   # c8 for black
-
-            if possible_moves_bitboard:  # Only add king moves if we found any
-                possible_moves[side + 'K'][king_position] = possible_moves_bitboard
-        
-        # Get pawn moves
-        pawn_bitboard = board.get(side + 'P', 0)
-        print(f"\nDebug: Processing pawn moves for {side}")
-        print(f"Pawn bitboard: {bin(pawn_bitboard)}")
-        for position in range(64):
-            if pawn_bitboard & (1 << position):
-                print(f"Found pawn at position {position}")
-                # Get basic moves from lookup tables
-                possible_moves_bitboard = self.P_lookup_w[position] if side == 'w' else self.P_lookup_b[position]
-                
-                # Remove moves to squares occupied by any piece (for forward moves)
-                forward_mask = possible_moves_bitboard & ~(own_pieces | opponent_pieces)
-                
-                # For captures, only allow moves to squares with opponent pieces
-                capture_mask = possible_moves_bitboard & opponent_pieces
-                
-                # Combine legal forward moves and captures
-                possible_moves_bitboard = forward_mask | capture_mask
-                
-                if possible_moves_bitboard:
-                    possible_moves[side + 'P'][position] = possible_moves_bitboard
-                    print(f"Added moves for pawn at {position}: {bin(possible_moves_bitboard)}")
-                
-        return possible_moves
     def piece_constrainer(self, from_square="", to_square="", piece="wP"):
         """
         Check if a given piece follows the specified constraints for a move.
@@ -2260,8 +2046,7 @@ class ConstrainedGameState(GameState):
                             self.promoting_to_pos = to_position
                         
                     self.king_or_rook_moved(moving_piece, from_square=from_square)
-                    self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
-                    self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
+    
                     
                     self.update_board_state()
                     
@@ -2297,8 +2082,6 @@ class ConstrainedGameState(GameState):
                 if self.piece_constrainer(piece=piece):
                     self.king_or_rook_moved(moving_piece=piece)
                     self.castling_logic(piece)
-                    self.P_lookup_w = self.get_all_possible_pawn_moves_for_side('w')
-                    self.P_lookup_b = self.get_all_possible_pawn_moves_for_side('b')
                     self.update_board_state()
                     
         except Exception as e:

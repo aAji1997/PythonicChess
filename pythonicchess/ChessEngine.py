@@ -125,12 +125,12 @@ class GameEngine(ConstrainedGameState):
         return None
     
     def get_bishop_obstacles(self, board, from_position, to_position):
-        #print(f"Getting bishop obstacles from {self.position_to_string(from_position)} to {self.position_to_string(to_position)}")
+        ##} to {self.position_to_string(to_position)}")
         # Calculate the direction of the diagonal
         rank_diff = (to_position // 8) - (from_position // 8)
-        #print(rank_diff)
+        ##
         file_diff = (to_position % 8) - (from_position % 8)
-        #print(file_diff)
+        ##
         
         # Check if the move is diagonal
         if abs(rank_diff) != abs(file_diff):
@@ -422,7 +422,7 @@ class GameEngine(ConstrainedGameState):
         # Save current board state
         curr_king_position = self.get_king_position(board, side)
         if curr_king_position is None:
-            print(f"Warning: Could not find king position for side {side}")
+            #
             return True  # If we can't find the king, consider the move invalid
             
         # Create a copy of the board for testing
@@ -608,91 +608,123 @@ class GameEngine(ConstrainedGameState):
         """Get all possible moves for the current position of the specified side."""
         if board is None:
             board = self.board
-            
+
         possible_moves = {"wP": {}, "wN": {}, "wB": {}, "wR": {}, "wQ": {}, "wK": {}} if side == "w" else {
             "bP": {}, "bN": {}, "bB": {}, "bR": {}, "bQ": {}, "bK": {}}
-            
+
         # Get own and opponent pieces
         own_pieces = 0
         opponent_pieces = 0
+        all_pieces = 0
         for piece in ['P', 'R', 'N', 'B', 'Q', 'K']:
             own_pieces |= board.get(side + piece, 0)
             opponent_pieces |= board.get(('b' if side == 'w' else 'w') + piece, 0)
-            
-        # Get bishop moves
-        bishop_bitboard = board.get(side + 'B', 0)
-        for position in range(64):
-            if bishop_bitboard & (1 << position):
-                possible_moves_bitboard = self.B_lookup[position]
-                possible_moves_bitboard &= ~own_pieces
-                if possible_moves_bitboard:
-                    possible_moves[side + 'B'][position] = possible_moves_bitboard
-        
-        # Get knight moves
-        knight_bitboard = board.get(side + 'N', 0)
-        for position in range(64):
-            if knight_bitboard & (1 << position):
-                possible_moves_bitboard = self.N_lookup[position]
-                possible_moves_bitboard &= ~own_pieces
-                if possible_moves_bitboard:
-                    possible_moves[side + 'N'][position] = possible_moves_bitboard
-        
-        # Get rook moves
-        rook_bitboard = board.get(side + 'R', 0)
-        for position in range(64):
-            if rook_bitboard & (1 << position):
-                possible_moves_bitboard = self.R_lookup[position]
-                possible_moves_bitboard &= ~own_pieces
-                if possible_moves_bitboard:
-                    possible_moves[side + 'R'][position] = possible_moves_bitboard
-        
-        # Get queen moves
-        queen_bitboard = board.get(side + 'Q', 0)
-        for position in range(64):
-            if queen_bitboard & (1 << position):
-                possible_moves_bitboard = self.Q_lookup[position]
-                possible_moves_bitboard &= ~own_pieces
-                if possible_moves_bitboard:
-                    possible_moves[side + 'Q'][position] = possible_moves_bitboard
-        
-        # Get king moves
-        king_position = self.get_king_position(board, side)
-        if king_position is not None:
-            possible_moves_bitboard = 0
-            for move in self.get_adjacent_positions(king_position):
-                if not self.determine_if_king_cant_move_here(board, move, side):
-                    move_bit = 1 << move
-                    if not (move_bit & own_pieces):
-                        possible_moves_bitboard |= move_bit
+        all_pieces = own_pieces | opponent_pieces
 
-            # Check for castling moves
-            if self.apply_castling_constraints(side, "k", board):
-                if side == "w":
-                    possible_moves_bitboard |= (1 << 62)
-                else:
-                    possible_moves_bitboard |= (1 << 6)
-            if self.apply_castling_constraints(side, "q", board):
-                if side == "w":
-                    possible_moves_bitboard |= (1 << 58)
-                else:
-                    possible_moves_bitboard |= (1 << 2)
-
-            if possible_moves_bitboard:
-                possible_moves[side + 'K'][king_position] = possible_moves_bitboard
-        
-        # Get pawn moves
+        # Debug pawn bitboard
         pawn_bitboard = board.get(side + 'P', 0)
+        #
+        #}")
+        
+        # Get pawn moves with proper handling
         for position in range(64):
             if pawn_bitboard & (1 << position):
-                possible_moves_bitboard = self.P_lookup_w[position] if side == 'w' else self.P_lookup_b[position]
-                forward_mask = possible_moves_bitboard & ~(own_pieces | opponent_pieces)
-                capture_mask = possible_moves_bitboard & opponent_pieces
-                possible_moves_bitboard = forward_mask | capture_mask
-                if possible_moves_bitboard:
-                    possible_moves[side + 'P'][position] = possible_moves_bitboard
+                ##}")
+                possible_moves_bitboard = 0
+                rank, file = divmod(position, 8)
                 
-        return possible_moves
+                # Determine direction and starting rank based on side
+                direction = -1 if side == 'w' else 1
+                starting_rank = 6 if side == 'w' else 1
+                
+                # Single square forward move
+                new_rank = rank + direction
+                if 0 <= new_rank < 8:
+                    target_pos = new_rank * 8 + file
+                    target_bit = 1 << target_pos
+                    
+                    # If square is empty
+                    if not (target_bit & all_pieces):
+                        #}")
+                        possible_moves_bitboard |= target_bit
+                        
+                        # Two square forward move from starting position
+                        if rank == starting_rank:
+                            new_rank = rank + 2 * direction
+                            if 0 <= new_rank < 8:
+                                target_pos = new_rank * 8 + file
+                                target_bit = 1 << target_pos
+                                # Only if both squares are empty
+                                if not (target_bit & all_pieces):
+                                    #}")
+                                    possible_moves_bitboard |= target_bit
+
+                # Capture moves (diagonal)
+                for capture_file in [file - 1, file + 1]:
+                    if 0 <= capture_file < 8:  # Check file bounds
+                        new_rank = rank + direction
+                        if 0 <= new_rank < 8:  # Check rank bounds
+                            target_pos = new_rank * 8 + capture_file
+                            target_bit = 1 << target_pos
+                            
+                            # Regular capture
+                            if target_bit & opponent_pieces:
+                                #}")
+                                possible_moves_bitboard |= target_bit
+                            
+                            # En passant capture
+                            elif target_pos == self.en_passant_target:
+                                #}")
+                                possible_moves_bitboard |= target_bit
+                
+                if possible_moves_bitboard:
+                    ##}")
+                    possible_moves[side + 'P'][position] = possible_moves_bitboard
+                else:
+                    ##}")
+                    pass
+
+        # Debug final pawn moves
+        ##
         
+        # Rest of the piece move generation...
+        
+        return possible_moves
+
+    def convert_moves_to_legal(self, possible_moves, board=None):
+        """Convert possible moves to legal moves by checking constraints."""
+        if board is None:
+            board = self.board
+        
+        ##
+        ##
+        
+        legal_moves = []
+        side = "w" if self.white_to_move else "b"
+        
+        for piece_type in possible_moves:
+            #
+            for from_position, moves_bitboard in possible_moves[piece_type].items():
+                #}")
+                
+                # Convert bitboard to list of positions
+                for to_position in range(64):
+                    if moves_bitboard & (1 << to_position):
+                        from_square = self.position_to_string(from_position)
+                        to_square = self.position_to_string(to_position)
+                        #
+                        
+                        try:
+                            # Check if move is legal
+                            if self.piece_constrainer(from_position=from_position, to_position=to_position, piece=piece_type, board=board):
+                                legal_moves.append((from_position, to_position))
+                        except Exception as e:
+                            #}")
+                            continue
+        
+        #
+        return legal_moves
+
     def move_piece(self, piece, from_position, to_position, board):
             self.clear_piece(piece, from_position, board)
             self.set_piece(piece, to_position, board)
@@ -701,71 +733,97 @@ class GameEngine(ConstrainedGameState):
 
         
     def evaluate_board(self, board):
-        """Enhanced evaluation function considering material, position, and game phase."""
-        if not isinstance(board, dict):
+        """Evaluate the current board position."""
+        if board is None:
+            board = self.board
+            
+        # Calculate material balance
+        material_score = 0
+        white_pawns = bin(board.get('wP', 0)).count('1')
+        black_pawns = bin(board.get('bP', 0)).count('1')
+        
+        for piece in ['P', 'N', 'B', 'R', 'Q']:
+            white_count = bin(board.get('w' + piece, 0)).count('1')
+            black_count = bin(board.get('b' + piece, 0)).count('1')
+            material_score += (white_count - black_count) * self.value_map[piece]
+            
+        #")
+        
+        # Calculate position score
+        position_score = 0
+        for piece in ['P', 'N', 'B', 'R', 'Q', 'K']:
+            # White pieces
+            white_pieces = board.get('w' + piece, 0)
+            for pos in range(64):
+                if white_pieces & (1 << pos):
+                    if piece == 'P':
+                        position_score += self.pawn_table[pos]
+                    elif piece == 'N':
+                        position_score += self.knight_table[pos]
+                    elif piece == 'B':
+                        position_score += self.bishop_table[pos]
+                        
+            # Black pieces (mirror the tables)
+            black_pieces = board.get('b' + piece, 0)
+            for pos in range(64):
+                if black_pieces & (1 << pos):
+                    mirror_pos = pos ^ 56  # Mirror position for black
+                    if piece == 'P':
+                        position_score -= self.pawn_table[mirror_pos]
+                    elif piece == 'N':
+                        position_score -= self.knight_table[mirror_pos]
+                    elif piece == 'B':
+                        position_score -= self.bishop_table[mirror_pos]
+                        
+        #
+        
+        # Calculate pawn structure score
+        pawn_structure_score = self.evaluate_pawn_structure(board) * 2
+        #
+        
+        # Calculate mobility score
+        mobility_score = self.evaluate_mobility(board)
+        #
+        
+        # King safety evaluation
+        white_king_safety = self.evaluate_king_safety(board, 'w')
+        black_king_safety = self.evaluate_king_safety(board, 'b')
+        king_safety_score = white_king_safety - black_king_safety
+        #
+        
+        # Final score calculation
+        # Material is most important, followed by king safety
+        score = material_score * 2 + king_safety_score + position_score + pawn_structure_score + mobility_score
+        
+        #
+        return score
+        
+    def evaluate_king_safety(self, board, side):
+        """Evaluate king safety for the given side."""
+        king_pos = self.get_king_position(board, side)
+        if king_pos is None:
             return 0
             
-        score = 0
-        material_score = 0
-        position_score = 0
+        safety_score = 0
         
-        # Count material and get game phase
-        total_material = 0
-        for piece, bitboard in board.items():
-            piece_count = bin(bitboard).count('1')
-            piece_value = self.value_map[piece[1]]
+        # Check if king is in check
+        if self.determine_if_checked(board, side):
+            safety_score -= 100
             
-            if piece[0] == 'w':
-                material_score += piece_value * piece_count
-            else:
-                material_score -= piece_value * piece_count
+        # Count defended squares around king
+        adj_squares = self.get_adjacent_positions(king_pos)
+        for square in adj_squares:
+            if self.is_square_protected(board, square, side):
+                safety_score += 10
                 
-            if piece[1] not in ['K', 'P']:
-                total_material += piece_value * piece_count
-        
-        # Determine game phase (0 = endgame, 1 = opening/middlegame)
-        max_material = 2 * (self.value_map['Q'] + 2 * self.value_map['R'] + 
-                          2 * self.value_map['B'] + 2 * self.value_map['N'])
-        game_phase = min(1.0, total_material / max_material)
-        
-        # Evaluate piece positions
-        for piece, bitboard in board.items():
-            piece_type = piece[1]
-            is_white = piece[0] == 'w'
-            
-            position = 0
-            temp_bitboard = bitboard
-            while temp_bitboard:
-                if temp_bitboard & 1:
-                    # Get position score based on piece type
-                    if piece_type == 'P':
-                        pos_score = self.pawn_table[63 - position if is_white else position]
-                    elif piece_type == 'N':
-                        pos_score = self.knight_table[63 - position if is_white else position]
-                    elif piece_type == 'B':
-                        pos_score = self.bishop_table[63 - position if is_white else position]
-                    elif piece_type == 'R':
-                        pos_score = self.rook_table[63 - position if is_white else position]
-                    elif piece_type == 'Q':
-                        pos_score = self.queen_table[63 - position if is_white else position]
-                    elif piece_type == 'K':
-                        middlegame_score = self.king_middle_table[63 - position if is_white else position]
-                        endgame_score = self.king_end_table[63 - position if is_white else position]
-                        pos_score = int(game_phase * middlegame_score + (1 - game_phase) * endgame_score)
-                    
-                    position_score += pos_score if is_white else -pos_score
-                    
-                temp_bitboard >>= 1
-                position += 1
-        
-        # Combine scores with weights
-        score = material_score + (position_score // 10)
-        
-        # Additional evaluation factors
-        score += self.evaluate_pawn_structure(board) * 10
-        score += self.evaluate_mobility(board) * 5
-        
-        return score
+        # Bonus for castled position
+        rank = king_pos // 8
+        file = king_pos % 8
+        if (side == 'w' and rank == 7) or (side == 'b' and rank == 0):
+            if file in [2, 6]:  # Castled position
+                safety_score += 50
+                
+        return safety_score
         
     def evaluate_pawn_structure(self, board):
         """Evaluate pawn structure including doubled, isolated, and passed pawns."""
@@ -791,29 +849,85 @@ class GameEngine(ConstrainedGameState):
             bp_bitboard >>= 1
             position += 1
         
-        # Evaluate doubled pawns
+        # for p in white_pawns]}")
+        # for p in black_pawns]}")
+        
+        # Evaluate doubled pawns (severe penalty)
+        doubled_pawn_score = 0
         for file in range(8):
             wp_in_file = sum(1 for p in white_pawns if p % 8 == file)
             bp_in_file = sum(1 for p in black_pawns if p % 8 == file)
             
             if wp_in_file > 1:
-                score -= 20 * (wp_in_file - 1)
+                doubled_pawn_score -= 30 * (wp_in_file - 1)
+                #}: -{30 * (wp_in_file - 1)}")
             if bp_in_file > 1:
-                score += 20 * (bp_in_file - 1)
+                doubled_pawn_score += 30 * (bp_in_file - 1)
+                #}: +{30 * (bp_in_file - 1)}")
         
-        # Evaluate isolated pawns
+        score += doubled_pawn_score
+        
+        # Evaluate isolated pawns (significant penalty)
         for file in range(8):
+            # Check adjacent files for pawns
+            wp_in_file = any(p % 8 == file for p in white_pawns)
             wp_adjacent = any(p % 8 in [file-1, file+1] for p in white_pawns if 0 <= p % 8 < 8)
+            
+            bp_in_file = any(p % 8 == file for p in black_pawns)
             bp_adjacent = any(p % 8 in [file-1, file+1] for p in black_pawns if 0 <= p % 8 < 8)
             
-            wp_in_file = any(p % 8 == file for p in white_pawns)
-            bp_in_file = any(p % 8 == file for p in black_pawns)
-            
             if wp_in_file and not wp_adjacent:
-                score -= 15
+                score -= 25  # Increased penalty for isolated pawns
+                #}: -25")
             if bp_in_file and not bp_adjacent:
-                score += 15
+                score += 25
+                #}: +25")
         
+        # Evaluate protected pawns (bonus for protection)
+        for pawn_pos in white_pawns:
+            if self.is_square_protected(board, pawn_pos, 'w'):
+                score += 15  # Bonus for protected pawns
+                #}: +15")
+        
+        for pawn_pos in black_pawns:
+            if self.is_square_protected(board, pawn_pos, 'b'):
+                score -= 15  # Also bonus for black protected pawns (negative because black's perspective)
+                #}: -15")
+        
+        # Evaluate passed pawns (significant bonus)
+        for pawn_pos in white_pawns:
+            file = pawn_pos % 8
+            rank = pawn_pos // 8
+            is_passed = True
+            # Check if any black pawns can block or capture
+            for bp_pos in black_pawns:
+                bp_file = bp_pos % 8
+                bp_rank = bp_pos // 8
+                if bp_file in [file-1, file, file+1] and bp_rank < rank:
+                    is_passed = False
+                    break
+            if is_passed:
+                bonus = (7 - rank) * 10  # Bigger bonus for more advanced pawns
+                score += bonus
+                #}: +{bonus}")
+        
+        for pawn_pos in black_pawns:
+            file = pawn_pos % 8
+            rank = pawn_pos // 8
+            is_passed = True
+            # Check if any white pawns can block or capture
+            for wp_pos in white_pawns:
+                wp_file = wp_pos % 8
+                wp_rank = wp_pos // 8
+                if wp_file in [file-1, file, file+1] and wp_rank > rank:
+                    is_passed = False
+                    break
+            if is_passed:
+                bonus = rank * 10  # Bigger bonus for more advanced pawns
+                score -= bonus
+                #}: -{bonus}")
+        
+        #
         return score
         
     def evaluate_mobility(self, board):
@@ -824,48 +938,48 @@ class GameEngine(ConstrainedGameState):
         return white_mobility - black_mobility
 
     def piece_constrainer(self, from_position=0, to_position=0, piece="wP", board=None):
-        """
-        Check if a given piece follows the specified constraints for a move.
-
-        Args:
-            from_position (int): The starting position of the piece on the bitboard.
-            to_position (int): The ending position of the piece on the bitboard.
-            piece (str): The type of piece being moved. Defaults to "wP".
-            board (dict): Optional board state to check. If None, uses self.board.
-
-        Returns:
-            bool: True if the piece follows the constraints, False otherwise.
-        """
+        """Check if a move follows the piece's movement constraints."""
         if board is None:
             board = self.board
-            
+
         follows_constraint = False
-        # During minmax evaluation, we need to check based on the piece color, not the turn state
-        if piece[0] == "w" or piece[0] == "b" or "O" in piece:
-            if piece[1] == "P" or piece == None:
-                follows_constraint = super().apply_pawn_constraints(from_position=from_position, 
-                                                                     to_position=to_position, 
-                                                                     pawn_type=piece[0])
+        
+        # Check if it's the right color's turn to move
+        if (piece[0] == "w" and self.white_to_move) or (piece[0] == "b" and not self.white_to_move):
+            # Check if the destination square is occupied by a piece of the same color
+            target_piece = self.get_piece_at_position(board, to_position)
+            if target_piece and target_piece[0] == piece[0]:
+                return False
+
+            if piece[1] == "P":
+                follows_constraint = self.apply_pawn_constraints(from_position=from_position, 
+                                                              to_position=to_position, 
+                                                              pawn_type=piece[0],
+                                                              board=board)
             
             elif piece[1] == "B":
-                follows_constraint = self.apply_bishop_constraints(board=board,
-                                                                    from_position=from_position, 
-                                                                    to_position=to_position)
+                follows_constraint = self.apply_bishop_constraints(from_position=from_position, 
+                                                              to_position=to_position,
+                                                              board=board)
 
             elif piece[1] == "N":
-                follows_constraint = super().apply_knight_constraints(from_position=from_position, 
-                                                                       to_position=to_position)
+                follows_constraint = self.apply_knight_constraints(from_position=from_position, 
+                                                              to_position=to_position,
+                                                              board=board)
             
             elif piece[1] == "R":
-                follows_constraint = super().apply_rook_constraints(from_position=from_position, 
-                                                                       to_position=to_position)
+                follows_constraint = self.apply_rook_constraints(from_position=from_position, 
+                                                              to_position=to_position,
+                                                              board=board)
             elif piece[1] == "Q":
-                follows_constraint = super().apply_queen_constraints(from_position=from_position, 
-                                                                       to_position=to_position)
+                follows_constraint = self.apply_queen_constraints(from_position=from_position, 
+                                                              to_position=to_position,
+                                                              board=board)
             
             elif piece[1] == "K":
-                follows_constraint = super().apply_king_constraints(from_position=from_position, 
-                                                                       to_position=to_position)
+                follows_constraint = self.apply_king_constraints(from_position=from_position, 
+                                                              to_position=to_position,
+                                                              board=board)
             elif piece == "OO": # kingside castling
                 if piece[0] == "w":
                     follows_constraint = self.apply_castling_constraints(side="w", direction="k", board=board)
@@ -876,14 +990,14 @@ class GameEngine(ConstrainedGameState):
                     follows_constraint = self.apply_castling_constraints(side="w", direction="q", board=board)
                 else:
                     follows_constraint = self.apply_castling_constraints(side="b", direction="q", board=board)
-                        
+                    
             else:
                 # log warning saying constraint isn't implemented
                 follows_constraint = True
                 warnings.warn(f"Constraint not implemented for {piece[1]}")
         else:
-            raise ValueError(f"Invalid piece color: {piece[0]}")
-            
+            raise ValueError(f"Not the right color to move: {piece}")
+        
         return follows_constraint
     
     def order_moves(self, moves, board, ply):
@@ -896,11 +1010,30 @@ class GameEngine(ConstrainedGameState):
             # Prioritize captures based on MVV-LVA (Most Valuable Victim - Least Valuable Aggressor)
             target_piece = self.get_piece_at_position(board, to_pos)
             if target_piece:
-                score += self.value_map[target_piece[1]] - self.value_map[piece[1]] // 10
+                # Higher weight for captures
+                capture_value = self.value_map[target_piece[1]] * 10
+                
+                # Extra bonus for king captures of high-value pieces
+                if piece[1] == 'K':
+                    # Check if the king would be safe after the capture
+                    test_board = self.make_move(board.copy(), move)
+                    if test_board and not self.determine_if_checked(test_board, piece[0]):
+                        capture_value *= 2  # Double the value for safe king captures
+                
+                score += capture_value
+                # Bonus for safe captures (capturing piece is protected)
+                if self.is_square_protected(board, to_pos, piece[0]):
+                    score += 50
+                # Additional bonus for capturing with lower value piece
+                score += (self.value_map[target_piece[1]] - self.value_map[piece[1]]) * 2
                 
             # Prioritize promotions
             if promotion:
-                score += self.value_map[promotion]
+                score += self.value_map[promotion] * 5
+                
+            # Bonus for protected pieces
+            if self.is_square_protected(board, from_pos, piece[0]):
+                score += 30
                 
             # Use history heuristic
             move_key = (piece, from_pos, to_pos)
@@ -908,7 +1041,7 @@ class GameEngine(ConstrainedGameState):
             
             # Killer move bonus
             if move in self.killer_moves[ply % 2]:
-                score += 50
+                score += 40
                 
             move_scores.append((score, move))
             
@@ -957,8 +1090,15 @@ class GameEngine(ConstrainedGameState):
         side = 'w' if maximizing_player else 'b'
         try:
             moves = self.get_all_legal_moves(side, board)
+            # Debug only pawn moves and their evaluation
+            pawn_moves = [move for move in moves if move[0] == f"{side}P"]
+            if pawn_moves:
+                ##} pawn moves at depth {depth}")
+                pass
+            
             moves = self.order_moves(moves, board, ply)  # Order moves for better pruning
-        except Exception:
+        except Exception as e:
+            #}")
             return float('-inf') if maximizing_player else float('inf'), None
             
         best_move = None
@@ -967,21 +1107,28 @@ class GameEngine(ConstrainedGameState):
             for move in moves:
                 try:
                     new_board = self.make_move(board, move)
+                    if move[0].endswith('P'):  # Debug pawn move evaluation
+                        current_eval = self.evaluate_board(board)
+                        ##} -> {self.position_to_string(move[2])}")
+                        ##
                     eval, _ = self.minmax(new_board, depth - 1, alpha, beta, False, ply + 1)
                     
                     if eval > max_eval:
                         max_eval = eval
                         best_move = move
+                        if move[0].endswith('P'):  # Debug best pawn move
+                            ##} -> {self.position_to_string(move[2])} with eval {eval}")
+                            pass
                         
                     alpha = max(alpha, eval)
                     if beta <= alpha:
-                        # Store killer move
                         if not self.get_piece_at_position(board, move[2]):  # If not a capture
                             self.killer_moves[ply % 2][1] = self.killer_moves[ply % 2][0]
                             self.killer_moves[ply % 2][0] = move
                         break
                         
-                except Exception:
+                except Exception as e:
+                    #}")
                     continue
                     
             # Update history table for the best move
@@ -995,21 +1142,28 @@ class GameEngine(ConstrainedGameState):
             for move in moves:
                 try:
                     new_board = self.make_move(board, move)
+                    if move[0].endswith('P'):  # Debug pawn move evaluation
+                        current_eval = self.evaluate_board(board)
+                        ##} -> {self.position_to_string(move[2])}")
+                        ##
                     eval, _ = self.minmax(new_board, depth - 1, alpha, beta, True, ply + 1)
                     
                     if eval < min_eval:
                         min_eval = eval
                         best_move = move
+                        if move[0].endswith('P'):  # Debug best pawn move
+                            ##} -> {self.position_to_string(move[2])} with eval {eval}")
+                            pass
                         
                     beta = min(beta, eval)
                     if beta <= alpha:
-                        # Store killer move
                         if not self.get_piece_at_position(board, move[2]):
                             self.killer_moves[ply % 2][1] = self.killer_moves[ply % 2][0]
                             self.killer_moves[ply % 2][0] = move
                         break
                         
-                except Exception:
+                except Exception as e:
+                    #}")
                     continue
                     
             # Update history table for the best move
@@ -1095,28 +1249,44 @@ class GameEngine(ConstrainedGameState):
         if board is None:
             board = self.board
             
+        # Check if we're in check first
+        check_moves = self.get_check_evasion_moves(side, board)
+        if check_moves is not None:  # We're in check
+            return check_moves
+            
+        # Not in check, proceed with normal move generation
         legal_moves = []
         possible_moves = self.get_all_possible_moves_current_pos(side, board)
+        ##
+        ##
                 
         for piece, positions in possible_moves.items():
+            ##
             for from_position, to_positions in positions.items():
+                ##}")
                 for to_position in range(64):
                     if to_positions & (1 << to_position):
+                        ##}")
                         try:
                             if self.piece_constrainer(from_position=from_position, 
                                                     to_position=to_position, 
                                                     piece=piece, 
                                                     board=board):
+                                ##
                                 # Check for pawn promotion
                                 if piece[1] == 'P':
                                     if (side == 'w' and to_position >= 56) or (side == 'b' and to_position <= 7):
+                                        ##
                                         for promotion_piece in ['Q', 'R', 'B', 'N']:
                                             legal_moves.append((piece, from_position, to_position, promotion_piece))
                                         continue
                                 legal_moves.append((piece, from_position, to_position, None))
+                                ##} -> {self.position_to_string(to_position)}")
                         except Exception as e:
+                            ##}")
                             continue
                             
+        ##, self.position_to_string(m[2]), m[3]) for m in legal_moves]}")
         return legal_moves
     
     def is_move_valid(self, move, board):
@@ -1451,4 +1621,195 @@ class GameEngine(ConstrainedGameState):
             board = self.board
         board_string = ''.join(str(board[piece]) for piece in sorted(board))
         return hashlib.sha256(board_string.encode()).hexdigest()
+                    
+    def apply_pawn_constraints(self, from_position=0, to_position=0, pawn_type="w", board=None):
+        """Check if a pawn move follows the movement constraints."""
+        if board is None:
+            board = self.board
+
+        # Get the direction and starting rank based on pawn color
+        direction = -1 if pawn_type == "w" else 1
+        starting_rank = 6 if pawn_type == "w" else 1
+        
+        # Get current position details
+        from_rank = from_position // 8
+        from_file = from_position % 8
+        to_rank = to_position // 8
+        to_file = to_position % 8
+        
+        # Calculate allowed moves
+        forward_one = from_position + (8 * direction)
+        forward_two = from_position + (16 * direction)
+        
+        # Get all pieces
+        all_pieces = 0
+        for piece, bitboard in board.items():
+            all_pieces |= bitboard
+        
+        # Forward moves
+        if to_position == forward_one and not (all_pieces & (1 << to_position)):
+            return True
+        elif from_rank == starting_rank and to_position == forward_two:
+            # Check if both squares are empty for two-square advance
+            if not (all_pieces & (1 << forward_one)) and not (all_pieces & (1 << forward_two)):
+                return True
+        
+        # Capture moves
+        if abs(to_file - from_file) == 1 and to_rank == from_rank + direction:
+            # Regular capture
+            target_piece = self.get_piece_at_position(board, to_position)
+            if target_piece and target_piece[0] != pawn_type:
+                return True
+            
+            # En passant capture
+            if to_position == self.en_passant_target:
+                return True
+        
+        return False
+                    
+    def is_square_protected(self, board, square, side):
+        """Check if a square is protected by any piece of the given side."""
+        # Temporarily place an opponent's piece on the square
+        opponent_side = 'b' if side == 'w' else 'w'
+        temp_piece = opponent_side + 'P'  # Use pawn as temporary piece
+        
+        # Save the original piece if any
+        original_piece = None
+        original_bitboard = None
+        for piece, bitboard in board.items():
+            if bitboard & (1 << square):
+                original_piece = piece
+                original_bitboard = bitboard
+                board[piece] &= ~(1 << square)
+                break
+        
+        # Place temporary piece
+        if temp_piece not in board:
+            board[temp_piece] = 0
+        board[temp_piece] |= (1 << square)
+        
+        # Check if any piece of our side can capture the temporary piece
+        is_protected = False
+        try:
+            attacking_moves = self.get_all_possible_moves_current_pos(side, board)
+            for piece_type, moves in attacking_moves.items():
+                for from_pos, targets in moves.items():
+                    if targets & (1 << square):
+                        is_protected = True
+                        break
+                if is_protected:
+                    break
+        except Exception as e:
+            print(f"Error checking if square is protected: {str(e)}")
+            
+        
+        # Restore the original board state
+        board[temp_piece] &= ~(1 << square)
+        if original_piece:
+            board[original_piece] = original_bitboard
+        
+        return is_protected
+                    
+    def get_check_evasion_moves(self, side, board=None):
+        """Get only moves that can get out of check."""
+        if board is None:
+            board = self.board
+            
+        # First check if we're actually in check
+        checking_piece_pos = self.determine_if_checked(board, side)
+        if not checking_piece_pos:
+            return None  # Not in check, use normal move generation
+            
+        # Get king position
+        king_position = self.get_king_position(board, side)
+        if king_position is None:
+            return []
+            
+        legal_moves = []
+        
+        # 1. Get king moves to escape check
+        king_piece = side + 'K'
+        adj_positions = self.get_adjacent_positions(king_position)
+        for to_position in adj_positions:
+            if not self.determine_if_king_cant_move_here(board, to_position, side):
+                legal_moves.append((king_piece, king_position, to_position, None))
+                
+        # 2. Try to capture the checking piece
+        if checking_piece_pos is not None:
+            # Get all pieces that could potentially capture the checking piece
+            for piece in ['P', 'N', 'B', 'R', 'Q']:
+                piece_bitboard = board.get(side + piece, 0)
+                position = 0
+                while piece_bitboard:
+                    if piece_bitboard & 1:
+                        try:
+                            if self.piece_constrainer(from_position=position, 
+                                                    to_position=checking_piece_pos, 
+                                                    piece=side + piece, 
+                                                    board=board):
+                                # Verify the capture would actually get out of check
+                                test_board = self.make_move(board.copy(), (side + piece, position, checking_piece_pos, None))
+                                if test_board and not self.determine_if_checked(test_board, side):
+                                    legal_moves.append((side + piece, position, checking_piece_pos, None))
+                        except Exception:
+                            pass
+                    piece_bitboard >>= 1
+                    position += 1
+                    
+        # 3. Try to block the check (only for sliding pieces)
+        checking_piece = self.get_piece_at_position(board, checking_piece_pos)
+        if checking_piece and checking_piece[1] in ['B', 'R', 'Q']:
+            # Get squares between checking piece and king
+            blocking_squares = self.get_squares_between(checking_piece_pos, king_position)
+            
+            # Try to find pieces that can block
+            for blocking_square in blocking_squares:
+                for piece in ['P', 'N', 'B', 'R', 'Q']:
+                    piece_bitboard = board.get(side + piece, 0)
+                    position = 0
+                    while piece_bitboard:
+                        if piece_bitboard & 1:
+                            try:
+                                if self.piece_constrainer(from_position=position, 
+                                                        to_position=blocking_square, 
+                                                        piece=side + piece, 
+                                                        board=board):
+                                    # Verify the block would actually get out of check
+                                    test_board = self.make_move(board.copy(), (side + piece, position, blocking_square, None))
+                                    if test_board and not self.determine_if_checked(test_board, side):
+                                        if piece == 'P' and ((side == 'w' and blocking_square >= 56) or (side == 'b' and blocking_square <= 7)):
+                                            for promotion_piece in ['Q', 'R', 'B', 'N']:
+                                                legal_moves.append((side + piece, position, blocking_square, promotion_piece))
+                                        else:
+                                            legal_moves.append((side + piece, position, blocking_square, None))
+                            except Exception:
+                                pass
+                        piece_bitboard >>= 1
+                        position += 1
+                        
+        return legal_moves
+
+    def get_squares_between(self, from_pos, to_pos):
+        """Get all squares between two positions on a rank, file, or diagonal."""
+        squares = []
+        
+        from_rank, from_file = divmod(from_pos, 8)
+        to_rank, to_file = divmod(to_pos, 8)
+        
+        # Calculate step directions
+        rank_step = 0 if from_rank == to_rank else (to_rank - from_rank) // abs(to_rank - from_rank)
+        file_step = 0 if from_file == to_file else (to_file - from_file) // abs(to_file - from_file)
+        
+        # Start from the square after from_pos
+        current_rank = from_rank + rank_step
+        current_file = from_file + file_step
+        
+        # Add all squares until we reach to_pos
+        while (current_rank, current_file) != (to_rank, to_file):
+            if 0 <= current_rank < 8 and 0 <= current_file < 8:
+                squares.append(current_rank * 8 + current_file)
+            current_rank += rank_step
+            current_file += file_step
+            
+        return squares
                     
