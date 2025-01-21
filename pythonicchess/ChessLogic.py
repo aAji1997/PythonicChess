@@ -433,7 +433,8 @@ class ConstrainedGameState(GameState):
         else:
             self.board_states[board_hash] = 1
     
-    def get_all_possible_knight_moves(self):
+    def get_all_possible_knight_moves(self, board=None):
+        board = board if board is not None else self.board
         knight_moves = {}
         for i in range(64):
             x, y = divmod(i, 8)
@@ -459,23 +460,24 @@ class ConstrainedGameState(GameState):
             
             # Now filter moves for actual knights on the board
             for side in ['w', 'b']:
-                if self.board.get(side + 'N', 0) & (1 << i):
+                if board.get(side + 'N', 0) & (1 << i):
                     # Get own pieces to avoid moving to squares occupied by own pieces
                     own_pieces = 0
                     for piece in ['P', 'R', 'N', 'B', 'Q', 'K']:
-                        own_pieces |= self.board.get(side + piece, 0)
+                        own_pieces |= board.get(side + piece, 0)
                     
                     # Filter out moves to squares occupied by own pieces
                     knight_moves[i] &= ~own_pieces
         
         return knight_moves
     
-    def get_all_possible_bishop_moves(self):
+    def get_all_possible_bishop_moves(self, board=None):
+        board = board if board is not None else self.board
         bishop_moves = {}
         
         # Pre-calculate piece positions
-        white_pieces = sum(self.board.get('w' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
-        black_pieces = sum(self.board.get('b' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        white_pieces = sum(board.get('w' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        black_pieces = sum(board.get('b' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
         
         # Calculate moves for all squares (needed for checking)
         for i in range(64):
@@ -498,7 +500,7 @@ class ConstrainedGameState(GameState):
             # Filter moves for actual bishops
             for side, own_pieces, opp_pieces in [('w', white_pieces, black_pieces), 
                                                ('b', black_pieces, white_pieces)]:
-                if self.board.get(side + 'B', 0) & (1 << i):
+                if board.get(side + 'B', 0) & (1 << i):
                     filtered_moves = 0
                     for dx, dy in directions:
                         curr_x, curr_y = x + dx, y + dy
@@ -519,12 +521,13 @@ class ConstrainedGameState(GameState):
         
         return bishop_moves
 
-    def get_all_possible_rook_moves(self):
+    def get_all_possible_rook_moves(self, board=None):
+        board = board if board is not None else self.board
         rook_moves = {}
         
         # Pre-calculate piece positions
-        white_pieces = sum(self.board.get('w' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
-        black_pieces = sum(self.board.get('b' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        white_pieces = sum(board.get('w' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        black_pieces = sum(board.get('b' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
         
         # Calculate moves for all squares (needed for checking)
         for i in range(64):
@@ -547,7 +550,7 @@ class ConstrainedGameState(GameState):
             # Filter moves for actual rooks
             for side, own_pieces, opp_pieces in [('w', white_pieces, black_pieces), 
                                                ('b', black_pieces, white_pieces)]:
-                if self.board.get(side + 'R', 0) & (1 << i):
+                if board.get(side + 'R', 0) & (1 << i):
                     filtered_moves = 0
                     for dx, dy in directions:
                         curr_x, curr_y = x + dx, y + dy
@@ -568,12 +571,13 @@ class ConstrainedGameState(GameState):
         
         return rook_moves
 
-    def get_all_possible_queen_moves(self):
+    def get_all_possible_queen_moves(self, board=None):
+        board = board if board is not None else self.board
         queen_moves = {}
         
         # Pre-calculate piece positions
-        white_pieces = sum(self.board.get('w' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
-        black_pieces = sum(self.board.get('b' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        white_pieces = sum(board.get('w' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
+        black_pieces = sum(board.get('b' + piece, 0) for piece in ['P', 'R', 'N', 'B', 'Q', 'K'])
         
         # Calculate moves for all squares (needed for checking)
         for i in range(64):
@@ -597,7 +601,7 @@ class ConstrainedGameState(GameState):
             # Filter moves for actual queens
             for side, own_pieces, opp_pieces in [('w', white_pieces, black_pieces), 
                                                ('b', black_pieces, white_pieces)]:
-                if self.board.get(side + 'Q', 0) & (1 << i):
+                if board.get(side + 'Q', 0) & (1 << i):
                     filtered_moves = 0
                     for dx, dy in directions:
                         curr_x, curr_y = x + dx, y + dy
@@ -2046,7 +2050,7 @@ class ConstrainedGameState(GameState):
                             self.promoting_to_pos = to_position
                         
                     self.king_or_rook_moved(moving_piece, from_square=from_square)
-    
+
                     
                     self.update_board_state()
                     
@@ -2082,6 +2086,7 @@ class ConstrainedGameState(GameState):
                 if self.piece_constrainer(piece=piece):
                     self.king_or_rook_moved(moving_piece=piece)
                     self.castling_logic(piece)
+
                     self.update_board_state()
                     
         except Exception as e:

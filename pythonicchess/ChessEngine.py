@@ -13,6 +13,12 @@ class GameEngine(ConstrainedGameState):
         
         self.value_map = {"P": 100, "N": 320, "B": 330, "R": 500, "Q": 900, "K": 20000}
         
+        # Initialize lookup tables for piece moves
+        self.N_lookup = self.initialize_knight_moves()
+        self.B_lookup = self.initialize_bishop_moves()
+        self.R_lookup = self.initialize_rook_moves()
+        self.Q_lookup = self.initialize_queen_moves()
+        
         # Piece-square tables for positional evaluation
         self.pawn_table = [
             0,  0,  0,  0,  0,  0,  0,  0,
@@ -90,6 +96,219 @@ class GameEngine(ConstrainedGameState):
             -30,-30,  0,  0,  0,  0,-30,-30,
             -50,-30,-30,-30,-30,-30,-30,-50
         ]
+    
+    def initialize_knight_moves(self):
+        """Initialize lookup table for all possible knight moves from each square."""
+        knight_moves = {}
+        for i in range(64):
+            x, y = divmod(i, 8)
+            
+            # Calculate all possible knight moves for this position
+            possible_moves_bitboard = 0
+            knight_offsets = [
+                (-2, -1), (-2, 1),  # Up 2, left/right 1
+                (2, -1), (2, 1),    # Down 2, left/right 1
+                (-1, -2), (-1, 2),  # Up 1, left/right 2
+                (1, -2), (1, 2)     # Down 1, left/right 2
+            ]
+            
+            # Calculate all theoretically possible moves for this position
+            for dx, dy in knight_offsets:
+                new_x, new_y = x + dx, y + dy
+                if 0 <= new_x < 8 and 0 <= new_y < 8:
+                    target_pos = new_x * 8 + new_y
+                    possible_moves_bitboard |= 1 << target_pos
+            
+            # Store all theoretical moves in lookup
+            knight_moves[i] = possible_moves_bitboard
+        
+        return knight_moves
+    
+    def initialize_bishop_moves(self):
+        """Initialize lookup table for all possible bishop moves from each square."""
+        bishop_moves = {}
+        
+        # Calculate moves for all squares
+        for i in range(64):
+            x, y = divmod(i, 8)
+            possible_moves_bitboard = 0
+            directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+            
+            # Calculate theoretical moves
+            for dx, dy in directions:
+                curr_x, curr_y = x + dx, y + dy
+                while 0 <= curr_x < 8 and 0 <= curr_y < 8:
+                    target_pos = curr_x * 8 + curr_y
+                    possible_moves_bitboard |= 1 << target_pos
+                    curr_x += dx
+                    curr_y += dy
+            
+            # Store theoretical moves
+            bishop_moves[i] = possible_moves_bitboard
+        
+        return bishop_moves
+    
+    def initialize_rook_moves(self):
+        """Initialize lookup table for all possible rook moves from each square."""
+        rook_moves = {}
+        
+        # Calculate moves for all squares
+        for i in range(64):
+            x, y = divmod(i, 8)
+            possible_moves_bitboard = 0
+            directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]  # Right, left, down, up
+            
+            # Calculate theoretical moves
+            for dx, dy in directions:
+                curr_x, curr_y = x + dx, y + dy
+                while 0 <= curr_x < 8 and 0 <= curr_y < 8:
+                    target_pos = curr_x * 8 + curr_y
+                    possible_moves_bitboard |= 1 << target_pos
+                    curr_x += dx
+                    curr_y += dy
+            
+            # Store theoretical moves
+            rook_moves[i] = possible_moves_bitboard
+        
+        return rook_moves
+    
+    def initialize_queen_moves(self):
+        """Initialize lookup table for all possible queen moves from each square."""
+        queen_moves = {}
+        
+        # Calculate moves for all squares
+        for i in range(64):
+            x, y = divmod(i, 8)
+            possible_moves_bitboard = 0
+            directions = [(0, 1), (0, -1), (1, 0), (-1, 0),  # Rook directions
+                         (-1, -1), (-1, 1), (1, -1), (1, 1)] # Bishop directions
+            
+            # Calculate theoretical moves
+            for dx, dy in directions:
+                curr_x, curr_y = x + dx, y + dy
+                while 0 <= curr_x < 8 and 0 <= curr_y < 8:
+                    target_pos = curr_x * 8 + curr_y
+                    possible_moves_bitboard |= 1 << target_pos
+                    curr_x += dx
+                    curr_y += dy
+            
+            # Store theoretical moves
+            queen_moves[i] = possible_moves_bitboard
+        
+        return queen_moves
+        
+    def get_filtered_knight_moves(self, position, side, board):
+        """Get filtered knight moves for a specific position and board state."""
+        # Get theoretical moves from lookup
+        possible_moves = self.N_lookup[position]
+        
+        # Get own pieces to avoid moving to squares occupied by own pieces
+        own_pieces = 0
+        for piece in ['P', 'R', 'N', 'B', 'Q', 'K']:
+            own_pieces |= board.get(side + piece, 0)
+        
+        # Filter out moves to squares occupied by own pieces
+        return possible_moves & ~own_pieces
+    
+    def get_filtered_bishop_moves(self, position, side, board):
+        """Get filtered bishop moves for a specific position and board state."""
+        # Get theoretical moves from lookup
+        possible_moves = self.B_lookup[position]
+        
+        # Get own and opponent pieces
+        own_pieces = 0
+        opp_pieces = 0
+        for piece in ['P', 'R', 'N', 'B', 'Q', 'K']:
+            own_pieces |= board.get(side + piece, 0)
+            opp_pieces |= board.get(('b' if side == 'w' else 'w') + piece, 0)
+        
+        filtered_moves = 0
+        x, y = divmod(position, 8)
+        directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+        
+        for dx, dy in directions:
+            curr_x, curr_y = x + dx, y + dy
+            while 0 <= curr_x < 8 and 0 <= curr_y < 8:
+                target_pos = curr_x * 8 + curr_y
+                target_bit = 1 << target_pos
+                
+                if target_bit & (own_pieces | opp_pieces):
+                    if target_bit & opp_pieces:
+                        filtered_moves |= target_bit
+                    break
+                
+                filtered_moves |= target_bit
+                curr_x += dx
+                curr_y += dy
+        
+        return filtered_moves
+    
+    def get_filtered_rook_moves(self, position, side, board):
+        """Get filtered rook moves for a specific position and board state."""
+        # Get theoretical moves from lookup
+        possible_moves = self.R_lookup[position]
+        
+        # Get own and opponent pieces
+        own_pieces = 0
+        opp_pieces = 0
+        for piece in ['P', 'R', 'N', 'B', 'Q', 'K']:
+            own_pieces |= board.get(side + piece, 0)
+            opp_pieces |= board.get(('b' if side == 'w' else 'w') + piece, 0)
+        
+        filtered_moves = 0
+        x, y = divmod(position, 8)
+        directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]  # Right, left, down, up
+        
+        for dx, dy in directions:
+            curr_x, curr_y = x + dx, y + dy
+            while 0 <= curr_x < 8 and 0 <= curr_y < 8:
+                target_pos = curr_x * 8 + curr_y
+                target_bit = 1 << target_pos
+                
+                if target_bit & (own_pieces | opp_pieces):
+                    if target_bit & opp_pieces:
+                        filtered_moves |= target_bit
+                    break
+                
+                filtered_moves |= target_bit
+                curr_x += dx
+                curr_y += dy
+        
+        return filtered_moves
+    
+    def get_filtered_queen_moves(self, position, side, board):
+        """Get filtered queen moves for a specific position and board state."""
+        # Get theoretical moves from lookup
+        possible_moves = self.Q_lookup[position]
+        
+        # Get own and opponent pieces
+        own_pieces = 0
+        opp_pieces = 0
+        for piece in ['P', 'R', 'N', 'B', 'Q', 'K']:
+            own_pieces |= board.get(side + piece, 0)
+            opp_pieces |= board.get(('b' if side == 'w' else 'w') + piece, 0)
+        
+        filtered_moves = 0
+        x, y = divmod(position, 8)
+        directions = [(0, 1), (0, -1), (1, 0), (-1, 0),  # Rook directions
+                     (-1, -1), (-1, 1), (1, -1), (1, 1)] # Bishop directions
+        
+        for dx, dy in directions:
+            curr_x, curr_y = x + dx, y + dy
+            while 0 <= curr_x < 8 and 0 <= curr_y < 8:
+                target_pos = curr_x * 8 + curr_y
+                target_bit = 1 << target_pos
+                
+                if target_bit & (own_pieces | opp_pieces):
+                    if target_bit & opp_pieces:
+                        filtered_moves |= target_bit
+                    break
+                
+                filtered_moves |= target_bit
+                curr_x += dx
+                curr_y += dy
+        
+        return filtered_moves
     
     def set_piece(self, piece, position, board):
         """Set a piece on the board, handling captures properly."""
@@ -609,8 +828,7 @@ class GameEngine(ConstrainedGameState):
         if board is None:
             board = self.board
 
-        possible_moves = {"wP": {}, "wN": {}, "wB": {}, "wR": {}, "wQ": {}, "wK": {}} if side == "w" else {
-            "bP": {}, "bN": {}, "bB": {}, "bR": {}, "bQ": {}, "bK": {}}
+        possible_moves = {side + "P": {}, side + "N": {}, side + "B": {}, side + "R": {}, side + "Q": {}, side + "K": {}}
 
         # Get own and opponent pieces
         own_pieces = 0
@@ -621,73 +839,103 @@ class GameEngine(ConstrainedGameState):
             opponent_pieces |= board.get(('b' if side == 'w' else 'w') + piece, 0)
         all_pieces = own_pieces | opponent_pieces
 
-        # Debug pawn bitboard
+        # Get pawn moves
         pawn_bitboard = board.get(side + 'P', 0)
-        #
-        #}")
-        
-        # Get pawn moves with proper handling
-        for position in range(64):
-            if pawn_bitboard & (1 << position):
-                ##}")
+        position = 0
+        while pawn_bitboard:
+            if pawn_bitboard & 1:
                 possible_moves_bitboard = 0
-                rank, file = divmod(position, 8)
+                x, y = divmod(position, 8)
                 
                 # Determine direction and starting rank based on side
                 direction = -1 if side == 'w' else 1
                 starting_rank = 6 if side == 'w' else 1
                 
                 # Single square forward move
-                new_rank = rank + direction
+                new_rank = x + direction
                 if 0 <= new_rank < 8:
-                    target_pos = new_rank * 8 + file
+                    target_pos = new_rank * 8 + y
                     target_bit = 1 << target_pos
                     
                     # If square is empty
                     if not (target_bit & all_pieces):
-                        #}")
                         possible_moves_bitboard |= target_bit
                         
                         # Two square forward move from starting position
-                        if rank == starting_rank:
-                            new_rank = rank + 2 * direction
+                        if x == starting_rank:
+                            new_rank = x + 2 * direction
                             if 0 <= new_rank < 8:
-                                target_pos = new_rank * 8 + file
+                                target_pos = new_rank * 8 + y
                                 target_bit = 1 << target_pos
                                 # Only if both squares are empty
                                 if not (target_bit & all_pieces):
-                                    #}")
                                     possible_moves_bitboard |= target_bit
 
                 # Capture moves (diagonal)
-                for capture_file in [file - 1, file + 1]:
+                for capture_file in [y - 1, y + 1]:
                     if 0 <= capture_file < 8:  # Check file bounds
-                        new_rank = rank + direction
+                        new_rank = x + direction
                         if 0 <= new_rank < 8:  # Check rank bounds
                             target_pos = new_rank * 8 + capture_file
                             target_bit = 1 << target_pos
                             
                             # Regular capture
                             if target_bit & opponent_pieces:
-                                #}")
                                 possible_moves_bitboard |= target_bit
                             
                             # En passant capture
                             elif target_pos == self.en_passant_target:
-                                #}")
                                 possible_moves_bitboard |= target_bit
                 
                 if possible_moves_bitboard:
-                    ##}")
                     possible_moves[side + 'P'][position] = possible_moves_bitboard
-                else:
-                    ##}")
-                    pass
+            
+            pawn_bitboard >>= 1
+            position += 1
 
-        # Debug final pawn moves
-        ##
-        
-        # Rest of the piece move generation...
+        # Get knight moves
+        knight_bitboard = board.get(side + 'N', 0)
+        position = 0
+        while knight_bitboard:
+            if knight_bitboard & 1:
+                filtered_moves = self.get_filtered_knight_moves(position, side, board)
+                if filtered_moves:
+                    possible_moves[side + 'N'][position] = filtered_moves
+            knight_bitboard >>= 1
+            position += 1
+
+        # Get bishop moves
+        bishop_bitboard = board.get(side + 'B', 0)
+        position = 0
+        while bishop_bitboard:
+            if bishop_bitboard & 1:
+                filtered_moves = self.get_filtered_bishop_moves(position, side, board)
+                if filtered_moves:
+                    possible_moves[side + 'B'][position] = filtered_moves
+            bishop_bitboard >>= 1
+            position += 1
+
+        # Get rook moves
+        rook_bitboard = board.get(side + 'R', 0)
+        position = 0
+        while rook_bitboard:
+            if rook_bitboard & 1:
+                filtered_moves = self.get_filtered_rook_moves(position, side, board)
+                if filtered_moves:
+                    possible_moves[side + 'R'][position] = filtered_moves
+            rook_bitboard >>= 1
+            position += 1
+
+        # Get queen moves
+        queen_bitboard = board.get(side + 'Q', 0)
+        position = 0
+        while queen_bitboard:
+            if queen_bitboard & 1:
+                filtered_moves = self.get_filtered_queen_moves(position, side, board)
+                if filtered_moves:
+                    possible_moves[side + 'Q'][position] = filtered_moves
+            queen_bitboard >>= 1
+            position += 1
         
         return possible_moves
 
@@ -1668,7 +1916,17 @@ class GameEngine(ConstrainedGameState):
         return False
                     
     def is_square_protected(self, board, square, side):
-        """Check if a square is protected by any piece of the given side."""
+        """
+        Check if a square is protected by any piece of the given side using legal moves.
+        
+        Args:
+            board (dict): The board state to check
+            square (int): The square position to check
+            side (str): The side to check ('w' or 'b')
+            
+        Returns:
+            bool: True if the square is protected, False otherwise
+        """
         # Temporarily place an opponent's piece on the square
         opponent_side = 'b' if side == 'w' else 'w'
         temp_piece = opponent_side + 'P'  # Use pawn as temporary piece
@@ -1688,25 +1946,43 @@ class GameEngine(ConstrainedGameState):
             board[temp_piece] = 0
         board[temp_piece] |= (1 << square)
         
-        # Check if any piece of our side can capture the temporary piece
+        # Check if any piece of our side can legally capture the temporary piece
         is_protected = False
         try:
-            attacking_moves = self.get_all_possible_moves_current_pos(side, board)
-            for piece_type, moves in attacking_moves.items():
-                for from_pos, targets in moves.items():
-                    if targets & (1 << square):
-                        is_protected = True
-                        break
+            # Get all pieces of our side
+            for piece_type in ['P', 'N', 'B', 'R', 'Q', 'K']:
+                piece = side + piece_type
+                piece_bitboard = board.get(piece, 0)
+                position = 0
+                
+                # Check each piece position
+                while piece_bitboard:
+                    if piece_bitboard & 1:
+                        try:
+                            # Check if this piece can legally move to the target square
+                            if self.piece_constrainer(
+                                from_position=position,
+                                to_position=square,
+                                piece=piece,
+                                board=board
+                            ):
+                                is_protected = True
+                                break
+                        except Exception:
+                            pass
+                    piece_bitboard >>= 1
+                    position += 1
+                    
                 if is_protected:
                     break
+                    
         except Exception as e:
             print(f"Error checking if square is protected: {str(e)}")
-            
-        
-        # Restore the original board state
-        board[temp_piece] &= ~(1 << square)
-        if original_piece:
-            board[original_piece] = original_bitboard
+        finally:
+            # Restore the original board state
+            board[temp_piece] &= ~(1 << square)
+            if original_piece:
+                board[original_piece] = original_bitboard
         
         return is_protected
                     
