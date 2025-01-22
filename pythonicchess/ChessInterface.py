@@ -57,6 +57,7 @@ class GameInterface(ConstrainedGameState):
         self.move_surface = None
         self.scroll_y = 0  # For scrolling through moves
         self.max_scroll = 0
+        self.clock_gap = 100  # Added for the new clock layout
         
     def pixel_to_position(self, x, y):
         """
@@ -460,6 +461,10 @@ class GameInterface(ConstrainedGameState):
                                         continue
                                     self.first_click = True
                                     self.highlighted_square = (row, col)
+                                    pg.event.clear()  # Clear any remaining events in the queue
+                                    # Force immediate display update
+                                    self.draw_game_state()
+                                    pg.display.update()
                                 else:
                                     second_click_pos = self.pixel_to_position(mouse_x, mouse_y)
                                     if second_click_pos == self.first_click_pos:
@@ -513,25 +518,35 @@ class GameInterface(ConstrainedGameState):
 
                 
     def draw_game_state(self):
-        """
-        Draw the complete game state in the correct order:
-        1. Board squares
-        2. Move highlights
-        3. Pieces
-        4. Square selection highlight
-        5. Last computer move highlight
-        6. Clock display
-        """
-        self.draw_board()  # Draw the base board first
-        self.draw_highlighted_moves()  # Draw move highlights
-        self.draw_pieces()  # Draw pieces on top
-        if self.highlighted_square:  # Draw selection highlight last
+        """Draw the complete game state including the move window."""
+        # Create move window if it doesn't exist
+        if not self.move_window:
+            self.create_move_window()
+        
+        # Draw the chess board on the left side
+        self.draw_board()
+        self.draw_highlighted_moves()
+        self.draw_pieces()
+        if self.highlighted_square:
             self.highlight_square(self.highlighted_square)
-        if self.last_computer_move and self.game_mode == 'computer':  # Draw computer's last move highlight
+        if self.last_computer_move and self.game_mode == 'computer':
             self.highlight_last_computer_move()
-        if self.time_control:  # Draw clock if time control is active
+        
+        # Update and draw the move window on the right side
+        self.update_move_display()
+        self.move_window.blit(self.screen, (0, 0))
+        
+        # Fill the clock gap area with white
+        clock_gap_rect = pg.Rect(self.width, 0, self.clock_gap, self.height)
+        self.move_window.fill(pg.Color('white'), clock_gap_rect)
+        
+        # Draw clock after blitting the screen but before the move surface
+        if self.time_control:
             self.draw_clock()
             
+        # Draw move history with proper offset to account for clock gap
+        self.move_window.blit(self.move_surface, (self.width + self.clock_gap, 0))
+
     def reset_game(self):
         """
         Reset the game state, display end game message if checkmated or drawn, sleep for 1 second,
@@ -554,7 +569,7 @@ class GameInterface(ConstrainedGameState):
         """
         Draw the board on the screen using Pygame, with alternating colors for the squares.
         """
-        colors = [pg.Color("white"), pg.Color(0, 100, 0)]
+        colors = [pg.Color(245, 245, 220), pg.Color(0, 100, 0)]  # Cream color (245,245,220) and dark green
         for i in range(self.dimensions):
             for j in range(self.dimensions):
                 if self.board_orientation == 'w':
@@ -786,46 +801,47 @@ class GameInterface(ConstrainedGameState):
                 
             # Check for en passant separately from regular captures
             # Get the last move from the move log
-            last_move = self.move_log[-1] if self.move_log.size > 0 and self.move_log[-1][0] != -1 else None
-            if last_move is not None:
-                try:
-                    last_piece = list(self.piece_enum.keys())[list(self.piece_enum.values()).index(last_move[0])]
-                    last_from_position = last_move[1]
-                    last_to_position = last_move[2]
-                    
-                    # Check if last move was a two-square pawn advance
-                    if last_piece[1].lower() == 'p' and abs(last_from_position - last_to_position) == 16:
-                        # For en passant, we need to check if our pawn is adjacent to the pawn that just moved
-                        last_pawn_file = last_to_position % 8
-                        our_pawn_file = position % 8
+            if self.move_log.size > 0:
+                last_move = self.move_log[-1]
+                if last_move[0] != -1:  # Check if it's a valid move
+                    try:
+                        last_piece = list(self.piece_enum.keys())[list(self.piece_enum.values()).index(last_move[0])]
+                        last_from_position = last_move[1]
+                        last_to_position = last_move[2]
                         
-                        # Check if our pawn is on an adjacent file and the correct rank
-                        if abs(last_pawn_file - our_pawn_file) == 1 and ((side == 'b' and position // 8 == last_to_position // 8) or 
-                                                                         (side == 'w' and position // 8 == last_to_position // 8)):
-                            # Calculate en passant target square (the square behind the pawn that moved two squares)
-                            ep_target = last_to_position + (8 if side == 'b' else -8)
+                        # Check if last move was a two-square pawn advance
+                        if last_piece[1].lower() == 'p' and abs(last_from_position - last_to_position) == 16:
+                            # For en passant, we need to check if our pawn is adjacent to the pawn that just moved
+                            last_pawn_file = last_to_position % 8
+                            our_pawn_file = position % 8
                             
-                            # The capture position should be the square behind the pawn that moved
-                            for capture_pos in captures:
-                                if capture_pos == ep_target:
-                                    try:
-                                        # Save board state
-                                        old_board = self.board.copy()
-                                        # Test if this move would leave us in check
-                                        captured_pawn_pos = last_to_position
-                                        captured_pawn = self.get_piece_at_position(captured_pawn_pos)
-                                        self.clear_piece(piece=piece, position=position)
-                                        self.clear_piece(piece=captured_pawn, position=captured_pawn_pos)
-                                        self.set_piece(piece=piece, position=capture_pos)
-                                        if not self.determine_if_checked(side=side):
-                                            valid_moves.add(capture_pos)
-                                        # Restore board state
-                                        self.board = old_board
-                                    except Exception as e:
-                                        # Restore board state
-                                        self.board = old_board
-                except (ValueError, IndexError) as e:
-                    pass
+                            # Check if our pawn is on an adjacent file and the correct rank
+                            if abs(last_pawn_file - our_pawn_file) == 1 and ((side == 'b' and position // 8 == last_to_position // 8) or 
+                                                                             (side == 'w' and position // 8 == last_to_position // 8)):
+                                # Calculate en passant target square (the square behind the pawn that moved two squares)
+                                ep_target = last_to_position + (8 if side == 'b' else -8)
+                                
+                                # The capture position should be the square behind the pawn that moved
+                                for capture_pos in captures:
+                                    if capture_pos == ep_target:
+                                        try:
+                                            # Save board state
+                                            old_board = self.board.copy()
+                                            # Test if this move would leave us in check
+                                            captured_pawn_pos = last_to_position
+                                            captured_pawn = self.get_piece_at_position(captured_pawn_pos)
+                                            self.clear_piece(piece=piece, position=position)
+                                            self.clear_piece(piece=captured_pawn, position=captured_pawn_pos)
+                                            self.set_piece(piece=piece, position=capture_pos)
+                                            if not self.determine_if_checked(side=side):
+                                                valid_moves.add(capture_pos)
+                                            # Restore board state
+                                            self.board = old_board
+                                        except Exception as e:
+                                            # Restore board state
+                                            self.board = old_board
+                    except (ValueError, IndexError) as e:
+                        pass
                 
             return valid_moves
             
@@ -1030,6 +1046,11 @@ class GameInterface(ConstrainedGameState):
         old_illegal_played = self.illegal_played
         
         try:
+            # Clear last computer move highlight if human is moving
+            if self.game_mode == 'computer':
+                if (self.white_to_move and self.player_color == 'w') or (not self.white_to_move and self.player_color == 'b'):
+                    self.last_computer_move = None
+                    
             # Check for capture before making the move
             if piece not in ["OO", "OOO"] and to_square:  # Only check for capture on non-castling moves
                 to_pos = self.string_to_position(to_square)
@@ -1210,10 +1231,11 @@ class GameInterface(ConstrainedGameState):
 
     def draw_clock(self):
         """
-        Draw the chess clock for both players.
+        Draw the chess clock for both players between the board and PGN recording area.
+        The clocks will flip based on board orientation.
         """
         font = pg.font.SysFont('Arial', 36)
-        padding = 20
+        padding = 10
         
         # Calculate remaining time for both players
         if self.last_move_time is not None and self.first_move_made:
@@ -1240,32 +1262,45 @@ class GameInterface(ConstrainedGameState):
         box_width = max(white_text.get_width(), black_text.get_width()) + 2 * box_padding
         box_height = white_text.get_height() + 2 * box_padding
         
-        # Position the clocks at top and bottom right
-        black_rect = black_text.get_rect(topright=(self.width - padding - box_padding, padding + box_padding))
-        white_rect = white_text.get_rect(bottomright=(self.width - padding - box_padding, self.height - padding - box_padding))
+        # Position the clocks in the gap between board and PGN area
+        # Add extra padding from the board edge to prevent overlap
+        edge_padding = 5
+        clock_x = self.width + edge_padding + (self.clock_gap - box_width) // 2
         
-        black_box = pg.Rect(self.width - padding - box_width, padding, box_width, box_height)
-        white_box = pg.Rect(self.width - padding - box_width, self.height - padding - box_height, box_width, box_height)
+        # Flip clock positions based on board orientation
+        if self.board_orientation == 'w':
+            top_rect = black_text.get_rect(center=(clock_x + box_width//2, self.height//3))
+            bottom_rect = white_text.get_rect(center=(clock_x + box_width//2, 2*self.height//3))
+            top_text = black_text
+            bottom_text = white_text
+        else:
+            top_rect = white_text.get_rect(center=(clock_x + box_width//2, self.height//3))
+            bottom_rect = black_text.get_rect(center=(clock_x + box_width//2, 2*self.height//3))
+            top_text = white_text
+            bottom_text = black_text
+        
+        top_box = pg.Rect(clock_x, top_rect.top - box_padding, box_width, box_height)
+        bottom_box = pg.Rect(clock_x, bottom_rect.top - box_padding, box_width, box_height)
         
         # Create semi-transparent surfaces
         box_surface = pg.Surface((box_width, box_height), pg.SRCALPHA)
         pg.draw.rect(box_surface, (255, 255, 255, 180), box_surface.get_rect())  # White with 180/255 alpha
         
-        # Draw backgrounds with transparency
-        self.screen.blit(box_surface, black_box)
-        self.screen.blit(box_surface, white_box)
+        # Draw backgrounds with transparency on move_window
+        self.move_window.blit(box_surface, top_box)
+        self.move_window.blit(box_surface, bottom_box)
         
-        # Draw borders
-        pg.draw.rect(self.screen, pg.Color('Black'), black_box, 2)
-        pg.draw.rect(self.screen, pg.Color('Black'), white_box, 2)
+        # Draw borders on move_window
+        pg.draw.rect(self.move_window, pg.Color('Black'), top_box, 2)
+        pg.draw.rect(self.move_window, pg.Color('Black'), bottom_box, 2)
         
-        # Draw text
-        self.screen.blit(black_text, black_rect)
-        self.screen.blit(white_text, white_rect)
-        
+        # Draw text on move_window
+        self.move_window.blit(top_text, top_rect)
+        self.move_window.blit(bottom_text, bottom_rect)
+
     def create_move_window(self):
         """Create a separate window for displaying moves in PGN format."""
-        self.move_window = pg.display.set_mode((self.width + self.move_window_width, self.height))
+        self.move_window = pg.display.set_mode((self.width + self.clock_gap + self.move_window_width, self.height))
         self.move_font = pg.font.SysFont('Arial', 20)
         self.move_surface = pg.Surface((self.move_window_width, self.height))
         pg.display.set_caption("PythonicChess - Game and Moves")
@@ -1367,28 +1402,6 @@ class GameInterface(ConstrainedGameState):
             mouse_x = pg.mouse.get_pos()[0]
             if mouse_x > self.width:  # Only scroll if mouse is in move window
                 self.scroll_y = max(min(0, self.scroll_y + event.y * 20), self.max_scroll)
-
-    def draw_game_state(self):
-        """Draw the complete game state including the move window."""
-        # Create move window if it doesn't exist
-        if not self.move_window:
-            self.create_move_window()
-        
-        # Draw the chess board on the left side
-        self.draw_board()
-        self.draw_highlighted_moves()
-        self.draw_pieces()
-        if self.highlighted_square:
-            self.highlight_square(self.highlighted_square)
-        if self.last_computer_move and self.game_mode == 'computer':
-            self.highlight_last_computer_move()
-        if self.time_control:
-            self.draw_clock()
-        
-        # Update and draw the move window on the right side
-        self.update_move_display()
-        self.move_window.blit(self.screen, (0, 0))
-        self.move_window.blit(self.move_surface, (self.width, 0))
 
 if __name__ == "__main__":
     game = GameInterface()
