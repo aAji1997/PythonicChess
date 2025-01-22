@@ -76,6 +76,7 @@ class GameState:
         self.first_move = True
         self.move_log = np.array([[-1, -1, -1]], dtype=np.int8)
         self.white_to_move = True
+        self.illegal_played = False
         
         
     def set_piece(self, piece, position):
@@ -272,6 +273,9 @@ class GameState:
         """
         Move a piece from one square to another.
         """
+        # Reset illegal_played at the start of each move attempt
+        self.illegal_played = False
+        
         # Don't proceed if we don't have both squares for any move
         if from_square and not to_square:
             print("Waiting for destination square...")
@@ -294,6 +298,7 @@ class GameState:
         if piece and not "O" in piece:  # Skip this check for castling notation (OO/OOO)
             is_white_piece = piece.startswith('w')
             if (is_white_piece and not self.white_to_move) or (not is_white_piece and self.white_to_move):
+                self.illegal_played = True
                 raise ValueError(f"Not {piece[0]}'s turn to move")
                 
         try:
@@ -307,6 +312,7 @@ class GameState:
                             moving_piece = p
                             break
                 if moving_piece is None:
+                    self.illegal_played = True
                     raise ValueError(f"No {piece} at {from_square}.")
                     
                 promotion = False
@@ -343,8 +349,11 @@ class GameState:
                     
                     # A move is illegal if it leaves or puts your own king in check
                     if self.white_to_move and white_check:
+                        self.illegal_played = True
                         raise ValueError("Illegal move. White is still in check or is put in check.")
+
                     if not self.white_to_move and black_check:
+                        self.illegal_played = True
                         raise ValueError("Illegal move. Black is still in check or is put in check.")
                     
                     # Update check status and evaluate checkmate
@@ -364,20 +373,26 @@ class GameState:
                         self.move_log = self.move_log[1:]
                         self.first_move = False
                 else:
+                    self.illegal_played = True
                     raise ValueError(f"Illegal move from {from_square} to {to_square} for {moving_piece}.")
             else:
                 if self.piece_constrainer(piece=piece):
                     self.king_or_rook_moved(moving_piece=piece)
                     self.castling_logic(piece)
-
                     self.update_board_state()
                     
         except Exception as e:
+            # Save illegal_played state
+            was_illegal = self.illegal_played
+            # Restore the previous state if the move was invalid
             for attr in vars(old_self):
                 setattr(self, attr, getattr(old_self, attr))
             self.board = old_board
+            # Restore illegal_played to its value after the error
+            self.illegal_played = was_illegal
             print(f"An error occurred while moving the piece: {e}")
             traceback.print_exc(file=sys.stdout)
+            return
     def display_board(self):
         print(self.get_board_representation())
         
@@ -872,6 +887,7 @@ class ConstrainedGameState(GameState):
         else:
             from_square = self.position_to_string(from_position)
             to_square = self.position_to_string(to_position)
+            self.illegal_played = True
             raise ValueError(f"Invalid move for knight: {from_square} to {to_square} is not a legal knight move")
 
     def get_rook_obstacles(self, from_position, to_position):
@@ -1924,59 +1940,64 @@ class ConstrainedGameState(GameState):
         Returns:
             bool: True if the piece follows the constraints, False otherwise.
         """
-        follows_constraint = False
-        # First check if it's the right color's turn to move
-        if piece and not "O" in piece:  # Skip this check for castling notation (OO/OOO)
-            is_white_piece = piece.startswith('w')
-            if (is_white_piece and not self.white_to_move) or (not is_white_piece and self.white_to_move):
-                raise ValueError(f"Not {piece[0]}'s turn to move")
+        try:
+            follows_constraint = False
+            # First check if it's the right color's turn to move
+            if piece and not "O" in piece:  # Skip this check for castling notation (OO/OOO)
+                is_white_piece = piece.startswith('w')
+                if (is_white_piece and not self.white_to_move) or (not is_white_piece and self.white_to_move):
+                    raise ValueError(f"Not {piece[0]}'s turn to move")
 
-        if self.white_to_move and piece[0] == "w" or not self.white_to_move and piece[0] == "b" or "O" in piece:
-            # Check for castling first - if the king is moving two squares, it must be a castling attempt
-            if piece and piece[1] == "K" and from_square and to_square:  # Only check for castling if we have both squares
-                from_pos = self.string_to_position(from_square)
-                to_pos = self.string_to_position(to_square)
-                # Check if this is a castling move
-                if abs(from_pos % 8 - to_pos % 8) == 2 and from_square[1] == to_square[1]:
-                    direction = "k" if to_pos % 8 > from_pos % 8 else "q"
-                    side = piece[0]
-                    return self.apply_castling_constraints(side=side, direction=direction)
-        
-            if piece[1] == "P" or piece == None:
-                follows_constraint = self.apply_pawn_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square), pawn_type=piece[0])
+            if self.white_to_move and piece[0] == "w" or not self.white_to_move and piece[0] == "b" or "O" in piece:
+                # Check for castling first - if the king is moving two squares, it must be a castling attempt
+                if piece and piece[1] == "K" and from_square and to_square:  # Only check for castling if we have both squares
+                    from_pos = self.string_to_position(from_square)
+                    to_pos = self.string_to_position(to_square)
+                    # Check if this is a castling move
+                    if abs(from_pos % 8 - to_pos % 8) == 2 and from_square[1] == to_square[1]:
+                        direction = "k" if to_pos % 8 > from_pos % 8 else "q"
+                        side = piece[0]
+                        follows_constraint = self.apply_castling_constraints(side=side, direction=direction)
+                        return follows_constraint
             
-            elif piece[1] == "B":
-                follows_constraint = self.apply_bishop_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
+                if piece[1] == "P" or piece == None:
+                    follows_constraint = self.apply_pawn_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square), pawn_type=piece[0])
+                
+                elif piece[1] == "B":
+                    follows_constraint = self.apply_bishop_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
 
-            elif piece[1] == "N":
-                follows_constraint = self.apply_knight_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
-            
-            elif piece[1] == "R":
-                follows_constraint = self.apply_rook_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
-            elif piece[1] == "Q":
-                follows_constraint = self.apply_queen_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
-            
-            elif piece[1] == "K":
-                follows_constraint = self.apply_king_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
-            elif piece == "OO": # kingside castling
-                if self.white_to_move:
-                    follows_constraint = self.apply_castling_constraints(side="w", direction="k")
+                elif piece[1] == "N":
+                    follows_constraint = self.apply_knight_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
+                
+                elif piece[1] == "R":
+                    follows_constraint = self.apply_rook_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
+                elif piece[1] == "Q":
+                    follows_constraint = self.apply_queen_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
+                
+                elif piece[1] == "K":
+                    follows_constraint = self.apply_king_constraints(from_position=self.string_to_position(from_square), to_position=self.string_to_position(to_square))
+                elif piece == "OO": # kingside castling
+                    if self.white_to_move:
+                        follows_constraint = self.apply_castling_constraints(side="w", direction="k")
+                    else:
+                        follows_constraint = self.apply_castling_constraints(side="b", direction="k")
+                elif piece == "OOO": # queenside castling
+                    if self.white_to_move:
+                        follows_constraint = self.apply_castling_constraints(side="w", direction="q")
+                    else:
+                        follows_constraint = self.apply_castling_constraints(side="b", direction="q")
+                            
                 else:
-                    follows_constraint = self.apply_castling_constraints(side="b", direction="k")
-            elif piece == "OOO": # queenside castling
-                if self.white_to_move:
-                    follows_constraint = self.apply_castling_constraints(side="w", direction="q")
-                else:
-                    follows_constraint = self.apply_castling_constraints(side="b", direction="q")
-                        
+                    # log warning saying constraint isn't implemented
+                    follows_constraint = True
+                    warnings.warn(f"Constraint not implemented for {piece[1]}")
             else:
-                # log warning saying constraint isn't implemented
-                follows_constraint = True
-                warnings.warn(f"Constraint not implemented for {piece[1]}")
-        else:
-            raise ValueError(f"Not the right color to move: {piece}")
-            
-        return follows_constraint
+                raise ValueError(f"Not the right color to move: {piece}")
+
+            return follows_constraint
+
+        except Exception as e:
+            raise e
     def piece_castle_conditional(self, piece):
         if piece is None:
             return True
@@ -1989,6 +2010,9 @@ class ConstrainedGameState(GameState):
         """
         Move a piece from one square to another.
         """
+        # Reset illegal_played at the start of each move attempt
+        self.illegal_played = False
+        
         # Don't proceed if we don't have both squares for any move
         if from_square and not to_square:
             print("Waiting for destination square...")
@@ -2011,6 +2035,7 @@ class ConstrainedGameState(GameState):
         if piece and not "O" in piece:  # Skip this check for castling notation (OO/OOO)
             is_white_piece = piece.startswith('w')
             if (is_white_piece and not self.white_to_move) or (not is_white_piece and self.white_to_move):
+                self.illegal_played = True
                 raise ValueError(f"Not {piece[0]}'s turn to move")
                 
         try:
@@ -2024,6 +2049,7 @@ class ConstrainedGameState(GameState):
                             moving_piece = p
                             break
                 if moving_piece is None:
+                    self.illegal_played = True
                     raise ValueError(f"No {piece} at {from_square}.")
                     
                 promotion = False
@@ -2060,8 +2086,10 @@ class ConstrainedGameState(GameState):
                     
                     # A move is illegal if it leaves or puts your own king in check
                     if self.white_to_move and white_check:
+                        self.illegal_played = True
                         raise ValueError("Illegal move. White is still in check or is put in check.")
                     if not self.white_to_move and black_check:
+                        self.illegal_played = True
                         raise ValueError("Illegal move. Black is still in check or is put in check.")
                     
                     # Update check status and evaluate checkmate
@@ -2081,20 +2109,26 @@ class ConstrainedGameState(GameState):
                         self.move_log = self.move_log[1:]
                         self.first_move = False
                 else:
+                    self.illegal_played = True
                     raise ValueError(f"Illegal move from {from_square} to {to_square} for {moving_piece}.")
             else:
                 if self.piece_constrainer(piece=piece):
                     self.king_or_rook_moved(moving_piece=piece)
                     self.castling_logic(piece)
-
                     self.update_board_state()
                     
         except Exception as e:
+            # Save illegal_played state
+            was_illegal = self.illegal_played
+            # Restore the previous state if the move was invalid
             for attr in vars(old_self):
                 setattr(self, attr, getattr(old_self, attr))
             self.board = old_board
+            # Restore illegal_played to its value after the error
+            self.illegal_played = was_illegal
             print(f"An error occurred while moving the piece: {e}")
             traceback.print_exc(file=sys.stdout)
+            return
     def play_move(self):
         move_prompt = input("Enter your move: ").strip()
 

@@ -1505,36 +1505,29 @@ class GameEngine(ConstrainedGameState):
         # Not in check, proceed with normal move generation
         legal_moves = []
         possible_moves = self.get_all_possible_moves_current_pos(side, board)
-        ##
-        ##
                 
         for piece, positions in possible_moves.items():
-            ##
             for from_position, to_positions in positions.items():
-                ##}")
                 for to_position in range(64):
                     if to_positions & (1 << to_position):
-                        ##}")
                         try:
                             if self.piece_constrainer(from_position=from_position, 
                                                     to_position=to_position, 
                                                     piece=piece, 
                                                     board=board):
-                                ##
-                                # Check for pawn promotion
-                                if piece[1] == 'P':
-                                    if (side == 'w' and to_position >= 56) or (side == 'b' and to_position <= 7):
-                                        ##
-                                        for promotion_piece in ['Q', 'R', 'B', 'N']:
-                                            legal_moves.append((piece, from_position, to_position, promotion_piece))
-                                        continue
-                                legal_moves.append((piece, from_position, to_position, None))
-                                ##} -> {self.position_to_string(to_position)}")
+                                # Test if this move would leave/put the king in check
+                                test_board = self.make_move(board.copy(), (piece, from_position, to_position, None))
+                                if test_board and not self.determine_if_checked(test_board, side):
+                                    # Check for pawn promotion
+                                    if piece[1] == 'P':
+                                        if (side == 'w' and to_position >= 56) or (side == 'b' and to_position <= 7):
+                                            for promotion_piece in ['Q', 'R', 'B', 'N']:
+                                                legal_moves.append((piece, from_position, to_position, promotion_piece))
+                                            continue
+                                    legal_moves.append((piece, from_position, to_position, None))
                         except Exception as e:
-                            ##}")
                             continue
                             
-        ##, self.position_to_string(m[2]), m[3]) for m in legal_moves]}")
         return legal_moves
     
     def is_move_valid(self, move, board):
@@ -1616,10 +1609,7 @@ class GameEngine(ConstrainedGameState):
             new_board[piece] |= (1 << to_position)
         
         return new_board
-         
-
-        
-                    
+     
     def get_rook_obstacles(self, from_position, to_position, board=None):
         """
         Check for obstacles in the path of a rook's move.

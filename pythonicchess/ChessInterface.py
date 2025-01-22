@@ -719,7 +719,11 @@ class GameInterface(ConstrainedGameState):
                     # Save board state
                     old_board = self.board.copy()
                     if self.piece_constrainer(from_square=from_square, to_square=to_square, piece=piece):
-                        valid_moves.add(one_ahead)
+                        # Test if this move would leave us in check
+                        self.clear_piece(piece=piece, position=position)
+                        self.set_piece(piece=piece, position=one_ahead)
+                        if not self.determine_if_checked(side=side):
+                            valid_moves.add(one_ahead)
                     # Restore board state
                     self.board = old_board
                 except:
@@ -735,7 +739,11 @@ class GameInterface(ConstrainedGameState):
                             # Save board state
                             old_board = self.board.copy()
                             if self.piece_constrainer(from_square=from_square, to_square=to_square, piece=piece):
-                                valid_moves.add(two_ahead)
+                                # Test if this move would leave us in check
+                                self.clear_piece(piece=piece, position=position)
+                                self.set_piece(piece=piece, position=two_ahead)
+                                if not self.determine_if_checked(side=side):
+                                    valid_moves.add(two_ahead)
                             # Restore board state
                             self.board = old_board
                         except:
@@ -762,7 +770,14 @@ class GameInterface(ConstrainedGameState):
                             # Save board state
                             old_board = self.board.copy()
                             if self.piece_constrainer(from_square=from_square, to_square=to_square, piece=piece):
-                                valid_moves.add(capture_pos)
+                                # Test if this move would leave us in check
+                                captured_piece = self.get_piece_at_position(capture_pos)
+                                self.clear_piece(piece=piece, position=position)
+                                if captured_piece:
+                                    self.clear_piece(piece=captured_piece, position=capture_pos)
+                                self.set_piece(piece=piece, position=capture_pos)
+                                if not self.determine_if_checked(side=side):
+                                    valid_moves.add(capture_pos)
                             # Restore board state
                             self.board = old_board
                         except:
@@ -796,8 +811,14 @@ class GameInterface(ConstrainedGameState):
                                     try:
                                         # Save board state
                                         old_board = self.board.copy()
-                                        # Add the en passant capture square to valid moves
-                                        valid_moves.add(capture_pos)
+                                        # Test if this move would leave us in check
+                                        captured_pawn_pos = last_to_position
+                                        captured_pawn = self.get_piece_at_position(captured_pawn_pos)
+                                        self.clear_piece(piece=piece, position=position)
+                                        self.clear_piece(piece=captured_pawn, position=captured_pawn_pos)
+                                        self.set_piece(piece=piece, position=capture_pos)
+                                        if not self.determine_if_checked(side=side):
+                                            valid_moves.add(capture_pos)
                                         # Restore board state
                                         self.board = old_board
                                     except Exception as e:
@@ -826,24 +847,95 @@ class GameInterface(ConstrainedGameState):
                     if target_piece and target_piece[0] == side:
                         continue
                         
+                    # Save board state
+                    old_board = self.board.copy()
                     if self.piece_constrainer(from_square=self.position_to_string(position), 
                                            to_square=self.position_to_string(to_pos), 
                                            piece=piece):
-                        valid_moves.add(to_pos)
+                        # Test if this move would put king in check
+                        captured_piece = self.get_piece_at_position(to_pos)
+                        self.clear_piece(piece=piece, position=position)
+                        if captured_piece:
+                            self.clear_piece(piece=captured_piece, position=to_pos)
+                        self.set_piece(piece=piece, position=to_pos)
+                        if not self.determine_if_checked(side=side):
+                            valid_moves.add(to_pos)
+                    # Restore board state
+                    self.board = old_board
                 except:
+                    # Restore board state
+                    self.board = old_board
                     continue
                     
             # Add castling moves if available
             if side == 'w':
                 if self.w_castle_k and not self.get_piece_at_position(61) and not self.get_piece_at_position(62):  # f1 and g1 must be empty
-                    valid_moves.add(62)  # g1
+                    # Check if king would pass through check
+                    old_board = self.board.copy()
+                    try:
+                        # Test f1
+                        self.clear_piece(piece=piece, position=position)
+                        self.set_piece(piece=piece, position=61)
+                        if not self.determine_if_checked(side=side):
+                            # Test g1
+                            self.clear_piece(piece=piece, position=61)
+                            self.set_piece(piece=piece, position=62)
+                            if not self.determine_if_checked(side=side):
+                                valid_moves.add(62)  # g1
+                    except:
+                        pass
+                    self.board = old_board
+                    
                 if self.w_castle_q and not self.get_piece_at_position(59) and not self.get_piece_at_position(58) and not self.get_piece_at_position(57):  # d1, c1, and b1 must be empty
-                    valid_moves.add(58)  # c1
+                    # Check if king would pass through check
+                    old_board = self.board.copy()
+                    try:
+                        # Test d1
+                        self.clear_piece(piece=piece, position=position)
+                        self.set_piece(piece=piece, position=59)
+                        if not self.determine_if_checked(side=side):
+                            # Test c1
+                            self.clear_piece(piece=piece, position=59)
+                            self.set_piece(piece=piece, position=58)
+                            if not self.determine_if_checked(side=side):
+                                valid_moves.add(58)  # c1
+                    except:
+                        pass
+                    self.board = old_board
             else:
                 if self.b_castle_k and not self.get_piece_at_position(5) and not self.get_piece_at_position(6):  # f8 and g8 must be empty
-                    valid_moves.add(6)   # g8
+                    # Check if king would pass through check
+                    old_board = self.board.copy()
+                    try:
+                        # Test f8
+                        self.clear_piece(piece=piece, position=position)
+                        self.set_piece(piece=piece, position=5)
+                        if not self.determine_if_checked(side=side):
+                            # Test g8
+                            self.clear_piece(piece=piece, position=5)
+                            self.set_piece(piece=piece, position=6)
+                            if not self.determine_if_checked(side=side):
+                                valid_moves.add(6)  # g8
+                    except:
+                        pass
+                    self.board = old_board
+                    
                 if self.b_castle_q and not self.get_piece_at_position(3) and not self.get_piece_at_position(2) and not self.get_piece_at_position(1):  # d8, c8, and b8 must be empty
-                    valid_moves.add(2)   # c8
+                    # Check if king would pass through check
+                    old_board = self.board.copy()
+                    try:
+                        # Test d8
+                        self.clear_piece(piece=piece, position=position)
+                        self.set_piece(piece=piece, position=3)
+                        if not self.determine_if_checked(side=side):
+                            # Test c8
+                            self.clear_piece(piece=piece, position=3)
+                            self.set_piece(piece=piece, position=2)
+                            if not self.determine_if_checked(side=side):
+                                valid_moves.add(2)  # c8
+                    except:
+                        pass
+                    self.board = old_board
             return valid_moves
 
         # For non-king pieces
@@ -856,11 +948,24 @@ class GameInterface(ConstrainedGameState):
                     if target_piece and target_piece[0] == side:
                         continue
                         
+                    # Save board state
+                    old_board = self.board.copy()
                     if self.piece_constrainer(from_square=self.position_to_string(position), 
                                            to_square=self.position_to_string(to_pos), 
                                            piece=piece):
-                        valid_moves.add(to_pos)
+                        # Test if this move would leave us in check
+                        captured_piece = self.get_piece_at_position(to_pos)
+                        self.clear_piece(piece=piece, position=position)
+                        if captured_piece:
+                            self.clear_piece(piece=captured_piece, position=to_pos)
+                        self.set_piece(piece=piece, position=to_pos)
+                        if not self.determine_if_checked(side=side):
+                            valid_moves.add(to_pos)
+                    # Restore board state
+                    self.board = old_board
                 except:
+                    # Restore board state
+                    self.board = old_board
                     continue
                     
         return valid_moves
@@ -913,69 +1018,96 @@ class GameInterface(ConstrainedGameState):
         """Override move_piece to update PGN moves and handle time control."""
         # Store the current state to check for captures and checks
         is_capture = False
-        if piece not in ["OO", "OOO"] and to_square:  # Only check for capture on non-castling moves
-            to_pos = self.string_to_position(to_square)
-            is_capture = self.get_piece_at_position(to_pos) is not None
+        move_successful = False
         
-        # Make the move
+        # Save the current board state before attempting the move
+        old_board = self.board.copy()
+        old_white_to_move = self.white_to_move
+        old_w_castle_k = self.w_castle_k
+        old_w_castle_q = self.w_castle_q
+        old_b_castle_k = self.b_castle_k
+        old_b_castle_q = self.b_castle_q
+        old_illegal_played = self.illegal_played
+        
         try:
+            # Check for capture before making the move
+            if piece not in ["OO", "OOO"] and to_square:  # Only check for capture on non-castling moves
+                to_pos = self.string_to_position(to_square)
+                is_capture = self.get_piece_at_position(to_pos) is not None
+            
+            # Make the move
             super().move_piece(from_square, to_square, piece)
+            
+            # Return immediately if the move was illegal
+            if self.illegal_played:
+                return
+            
+            # Handle time control
+            if self.time_control:
+                current_time = pg.time.get_ticks()
+                
+                # Update times
+                if self.last_move_time is not None:
+                    time_since_last_move = current_time - self.last_move_time
+                    if not self.white_to_move:  # White just moved
+                        self.white_time -= time_since_last_move
+                        if self.first_move_made:  # Don't add increment on first move
+                            self.white_time += self.increment
+                    else:  # Black just moved
+                        self.black_time -= time_since_last_move
+                        self.black_time += self.increment
+                
+                self.last_move_time = current_time
+                if not self.first_move_made:
+                    self.first_move_made = True
+            
+            print(self.illegal_played)
+            # In human vs human mode, flip the board after each successful move
+            if self.game_mode == 'human' and not self.illegal_played:
+                
+                self.board_orientation = 'w' if self.board_orientation == 'b' else 'b'
+            
+            # Update PGN for successful moves
+            if not self.promoting and not self.illegal_played:  # Don't add to PGN yet if promoting
+                last_move = self.move_log[-1] if self.move_log.size > 0 else None
+                if last_move is not None and last_move[0] != -1:
+                    # Handle castling moves
+                    if piece in ["OO", "OOO"]:
+                        pgn_move = "O-O" if piece == "OO" else "O-O-O"
+                        if self.checkmated:
+                            pgn_move += '#'
+                        elif self.white_in_check or self.black_in_check:
+                            pgn_move += '+'
+                        self.pgn_moves.append(pgn_move)
+                    else:
+                        # Get move details for non-castling moves
+                        piece_type = list(self.piece_enum.keys())[list(self.piece_enum.values()).index(last_move[0])]
+                        from_pos = last_move[1]
+                        to_pos = last_move[2]
+                        
+                        # Convert to PGN and add to list
+                        pgn_move = self.convert_to_pgn(
+                            piece_type,
+                            from_pos,
+                            to_pos,
+                            is_capture=is_capture,
+                            is_check=self.white_in_check or self.black_in_check,
+                            is_checkmate=self.checkmated,
+                            is_promotion=self.promoting
+                        )
+                        self.pgn_moves.append(pgn_move)
+            
         except Exception as e:
+            # Restore the previous state if the move was invalid
+            self.board = old_board
+            self.white_to_move = old_white_to_move
+            self.w_castle_k = old_w_castle_k
+            self.w_castle_q = old_w_castle_q
+            self.b_castle_k = old_b_castle_k
+            self.b_castle_q = old_b_castle_q
+            # Don't reset illegal_played flag when restoring state
             print(f"An error occurred while moving the piece: {str(e)}")
             return
-            
-        # Handle time control
-        if self.time_control:
-            current_time = pg.time.get_ticks()
-            
-            # Update times
-            if self.last_move_time is not None:
-                time_since_last_move = current_time - self.last_move_time
-                if not self.white_to_move:  # White just moved
-                    self.white_time -= time_since_last_move
-                    if self.first_move_made:  # Don't add increment on first move
-                        self.white_time += self.increment
-                else:  # Black just moved
-                    self.black_time -= time_since_last_move
-                    self.black_time += self.increment
-            
-            self.last_move_time = current_time
-            if not self.first_move_made:
-                self.first_move_made = True
-        
-        # In human vs human mode, flip the board after each move
-        if self.game_mode == 'human':
-            self.board_orientation = 'w' if self.board_orientation == 'b' else 'b'
-        
-        # If move was successful, update PGN
-        if not self.promoting:  # Don't add to PGN yet if promoting
-            last_move = self.move_log[-1] if self.move_log.size > 0 else None
-            if last_move is not None and last_move[0] != -1:
-                # Handle castling moves
-                if piece in ["OO", "OOO"]:
-                    pgn_move = "O-O" if piece == "OO" else "O-O-O"
-                    if self.checkmated:
-                        pgn_move += '#'
-                    elif self.white_in_check or self.black_in_check:
-                        pgn_move += '+'
-                    self.pgn_moves.append(pgn_move)
-                else:
-                    # Get move details for non-castling moves
-                    piece_type = list(self.piece_enum.keys())[list(self.piece_enum.values()).index(last_move[0])]
-                    from_pos = last_move[1]
-                    to_pos = last_move[2]
-                    
-                    # Convert to PGN and add to list
-                    pgn_move = self.convert_to_pgn(
-                        piece_type,
-                        from_pos,
-                        to_pos,
-                        is_capture=is_capture,
-                        is_check=self.white_in_check or self.black_in_check,
-                        is_checkmate=self.checkmated,
-                        is_promotion=self.promoting
-                    )
-                    self.pgn_moves.append(pgn_move)
 
     def check_time_out(self):
         """
