@@ -2151,7 +2151,7 @@ class ConstrainedGameState(GameState):
             from_square = move_prompt[:2]
             to_square = move_prompt[2:]
             self.move_piece(from_square=from_square, to_square=to_square)
-            print(self.get_piece_at_square("g1"))
+            #print(self.get_piece_at_square("g1"))
             return
 
         print("Invalid move format.")
@@ -2176,7 +2176,7 @@ def gameplay_check():
     
     game_state.display_board()
     move_dict = game_state.get_all_possible_moves_current_pos(side="w")
-    print(move_dict.keys())
+    #print(move_dict.keys())
     
 def checking_evaluation():
     game_state = ConstrainedGameState()

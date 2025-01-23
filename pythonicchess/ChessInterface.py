@@ -769,11 +769,38 @@ class GameInterface(ConstrainedGameState):
             file = position % 8
             captures = []
             if file > 0:  # Can capture to the left
-                captures.append(position + direction - 1)
+                captures.append(int(position + direction - 1))
             if file < 7:  # Can capture to the right
-                captures.append(position + direction + 1)
+                captures.append(int(position + direction + 1))
+                
+            # Add potential en passant target squares to captures list
+            ep_target = None  # Initialize ep_target outside the if block
+            if self.move_log.size > 0:
+                last_move = self.move_log[-1]
+                if last_move[0] != -1:  # Check if it's a valid move
+                    try:
+                        last_piece = list(self.piece_enum.keys())[list(self.piece_enum.values()).index(last_move[0])]
+                        last_from_position = int(last_move[1])
+                        last_to_position = int(last_move[2])
+                        
+                        # Check if last move was a two-square pawn advance
+                        if last_piece[1].lower() == 'p' and abs(last_from_position - last_to_position) == 16:
+                            last_pawn_file = last_to_position % 8
+                            our_pawn_file = position % 8
+                            
+                            # Check if our pawn is on an adjacent file and the correct rank
+                            if abs(last_pawn_file - our_pawn_file) == 1 and (
+                                (side == 'w' and position // 8 == 3 and last_to_position // 8 == 3) or  # White pawn on rank 5
+                                (side == 'b' and position // 8 == 4 and last_to_position // 8 == 4)     # Black pawn on rank 4
+                            ):
+                                # Calculate en passant target square (the square behind the pawn that moved two squares)
+                                ep_target = int(last_to_position + (8 if side == 'b' else -8))
+                                captures.append(ep_target)
+                    except (ValueError, IndexError) as e:
+                        pass
                 
             for capture_pos in captures:
+                capture_pos = int(capture_pos)  # Ensure capture_pos is an integer
                 if 0 <= capture_pos < 64:
                     capture_piece = self.get_piece_at_position(capture_pos)
                     from_square = self.position_to_string(position)
@@ -798,51 +825,27 @@ class GameInterface(ConstrainedGameState):
                         except:
                             # Restore board state
                             self.board = old_board
-                
-            # Check for en passant separately from regular captures
-            # Get the last move from the move log
-            if self.move_log.size > 0:
-                last_move = self.move_log[-1]
-                if last_move[0] != -1:  # Check if it's a valid move
-                    try:
-                        last_piece = list(self.piece_enum.keys())[list(self.piece_enum.values()).index(last_move[0])]
-                        last_from_position = last_move[1]
-                        last_to_position = last_move[2]
-                        
-                        # Check if last move was a two-square pawn advance
-                        if last_piece[1].lower() == 'p' and abs(last_from_position - last_to_position) == 16:
-                            # For en passant, we need to check if our pawn is adjacent to the pawn that just moved
-                            last_pawn_file = last_to_position % 8
-                            our_pawn_file = position % 8
-                            
-                            # Check if our pawn is on an adjacent file and the correct rank
-                            if abs(last_pawn_file - our_pawn_file) == 1 and ((side == 'b' and position // 8 == last_to_position // 8) or 
-                                                                             (side == 'w' and position // 8 == last_to_position // 8)):
-                                # Calculate en passant target square (the square behind the pawn that moved two squares)
-                                ep_target = last_to_position + (8 if side == 'b' else -8)
-                                
-                                # The capture position should be the square behind the pawn that moved
-                                for capture_pos in captures:
-                                    if capture_pos == ep_target:
-                                        try:
-                                            # Save board state
-                                            old_board = self.board.copy()
-                                            # Test if this move would leave us in check
-                                            captured_pawn_pos = last_to_position
-                                            captured_pawn = self.get_piece_at_position(captured_pawn_pos)
-                                            self.clear_piece(piece=piece, position=position)
-                                            self.clear_piece(piece=captured_pawn, position=captured_pawn_pos)
-                                            self.set_piece(piece=piece, position=capture_pos)
-                                            if not self.determine_if_checked(side=side):
-                                                valid_moves.add(capture_pos)
-                                            # Restore board state
-                                            self.board = old_board
-                                        except Exception as e:
-                                            # Restore board state
-                                            self.board = old_board
-                    except (ValueError, IndexError) as e:
-                        pass
-                
+                    
+                    # Check for en passant
+                    elif ep_target is not None and capture_pos == ep_target:  # This is an en passant capture
+                        try:
+                            # Save board state
+                            old_board = self.board.copy()
+                            # Test if this move would leave us in check
+                            captured_pawn_pos = last_to_position  # The pawn to capture is at the last move's destination
+                            captured_pawn = self.get_piece_at_position(captured_pawn_pos)
+                            if captured_pawn and captured_pawn[1] == 'P' and captured_pawn[0] != side:
+                                self.clear_piece(piece=piece, position=position)
+                                self.clear_piece(piece=captured_pawn, position=captured_pawn_pos)
+                                self.set_piece(piece=piece, position=capture_pos)
+                                if not self.determine_if_checked(side=side):
+                                    valid_moves.add(capture_pos)
+                            # Restore board state
+                            self.board = old_board
+                        except Exception as e:
+                            # Restore board state
+                            self.board = old_board
+            
             return valid_moves
             
         # Get the lookup table based on piece type
@@ -1082,7 +1085,6 @@ class GameInterface(ConstrainedGameState):
                 if not self.first_move_made:
                     self.first_move_made = True
             
-            print(self.illegal_played)
             # In human vs human mode, flip the board after each successful move
             if self.game_mode == 'human' and not self.illegal_played:
                 
@@ -1282,11 +1284,10 @@ class GameInterface(ConstrainedGameState):
         top_box = pg.Rect(clock_x, top_rect.top - box_padding, box_width, box_height)
         bottom_box = pg.Rect(clock_x, bottom_rect.top - box_padding, box_width, box_height)
         
-        # Create semi-transparent surfaces
         box_surface = pg.Surface((box_width, box_height), pg.SRCALPHA)
         pg.draw.rect(box_surface, (255, 255, 255, 180), box_surface.get_rect())  # White with 180/255 alpha
         
-        # Draw backgrounds with transparency on move_window
+        # Draw backgrounds
         self.move_window.blit(box_surface, top_box)
         self.move_window.blit(box_surface, bottom_box)
         
