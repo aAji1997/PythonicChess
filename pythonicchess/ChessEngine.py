@@ -3,6 +3,8 @@ import warnings
 from copy import deepcopy
 import hashlib
 import time
+import os
+from BookIntegration import create_python_chess_integration
 
 class GameEngine(ConstrainedGameState):
     def __init__(self):
@@ -96,6 +98,9 @@ class GameEngine(ConstrainedGameState):
             -30,-30,  0,  0,  0,  0,-30,-30,
             -50,-30,-30,-30,-30,-30,-30,-50
         ]
+        # Opening book integration
+        book_path = os.path.join(os.path.dirname(__file__), 'book', 'Perfect2023.bin')
+        self.opening_book = create_python_chess_integration(book_path)
     
     def initialize_knight_moves(self):
         """Initialize lookup table for all possible knight moves from each square."""
@@ -1423,6 +1428,17 @@ class GameEngine(ConstrainedGameState):
 
     def iterative_deepening_search(self, board, max_time=5.0):
         """Iterative deepening search with time control."""
+        # Attempt opening book move before search
+        if hasattr(self, 'opening_book') and self.opening_book:
+            book_move = self.opening_book.get_book_move(self)
+            if book_move:
+                # Convert book move to engine format
+                from_square = book_move['from_square']
+                to_square = book_move['to_square']
+                from_pos = self.string_to_position(from_square)
+                to_pos = self.string_to_position(to_square)
+                piece = self.get_piece_at_position(self.board, from_pos)
+                return (piece, from_pos, to_pos, None)
         start_time = time.time()
         best_move = None
         

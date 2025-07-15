@@ -399,6 +399,7 @@ class GameState:
 class ConstrainedGameState(GameState):
     def __init__(self):
         super().__init__()
+        self.set_start_position()  # Initialize pieces on the board
         self.board_states = {}
         self.N_lookup = self.get_all_possible_knight_moves()
         self.B_lookup = self.get_all_possible_bishop_moves()
@@ -1752,7 +1753,7 @@ class ConstrainedGameState(GameState):
                                 # If files are same (straight move)
                                 else:
                                     # Cannot capture straight ahead
-                                    target_piece = self.get_piece_at_position(target_position)
+                                    target_piece = self.get_piece_at_square(target_position)
                                     if target_piece:
                                         #print(f"Pawn at {from_square} cannot capture straight ahead at {to_square}")
                                         continue
@@ -2088,6 +2089,7 @@ class ConstrainedGameState(GameState):
                     if self.white_to_move and white_check:
                         self.illegal_played = True
                         raise ValueError("Illegal move. White is still in check or is put in check.")
+
                     if not self.white_to_move and black_check:
                         self.illegal_played = True
                         raise ValueError("Illegal move. Black is still in check or is put in check.")
@@ -2155,82 +2157,144 @@ class ConstrainedGameState(GameState):
             return
 
         print("Invalid move format.")
-
-def gameplay_check():
-    game_state = ConstrainedGameState()
-    game_state.set_start_position()
-    game_state.move_piece(from_square="e2", to_square="e4")
-    game_state.move_piece(from_square="e7", to_square="e5")
     
-    game_state.move_piece(from_square="g1", to_square="f3", piece="N")
-    game_state.move_piece(from_square="b8", to_square="c6", piece="N")
-    game_state.move_piece(from_square="f1", to_square="b5", piece="B")
-    game_state.move_piece(from_square="a7", to_square="a6")
-    game_state.move_piece(from_square="b5", to_square="a4", piece="B")
-    game_state.move_piece(from_square="h7", to_square="h5")
-    game_state.move_piece(from_square="a4", to_square="b3", piece="B")
-    game_state.move_piece(from_square="h8", to_square="h6", piece="R")
-    game_state.move_piece(from_square="d1", to_square="e2", piece="Q")
-    game_state.move_piece(from_square="h5", to_square="h4")
-    game_state.move_piece(piece="OO")
+    def internal_to_standard_position(self, internal_position):
+        """
+        Convert from internal coordinate system to standard chess coordinate system.
+        Internal: a1=56, h8=7 | Standard: a1=0, h8=63
+        
+        Args:
+            internal_position (int): Position in internal coordinate system (0-63)
+            
+        Returns:
+            int: Position in standard coordinate system (0-63)
+        """
+        internal_rank = internal_position // 8
+        internal_file = internal_position % 8
+        # Flip the rank (internal rank 7 -> standard rank 0, etc.)
+        standard_rank = 7 - internal_rank
+        standard_position = standard_rank * 8 + internal_file
+        return standard_position
     
-    game_state.display_board()
-    move_dict = game_state.get_all_possible_moves_current_pos(side="w")
-    #print(move_dict.keys())
+    def standard_to_internal_position(self, standard_position):
+        """
+        Convert from standard chess coordinate system to internal coordinate system.
+        Standard: a1=0, h8=63 | Internal: a1=56, h8=7
+        
+        Args:
+            standard_position (int): Position in standard coordinate system (0-63)
+            
+        Returns:
+            int: Position in internal coordinate system (0-63)
+        """
+        standard_rank = standard_position // 8
+        standard_file = standard_position % 8
+        # Flip the rank (standard rank 0 -> internal rank 7, etc.)
+        internal_rank = 7 - standard_rank
+        internal_position = internal_rank * 8 + standard_file
+        return internal_position
     
-def checking_evaluation():
-    game_state = ConstrainedGameState()
-    game_state.set_start_position()
-    game_state.clear_board()
-    game_state.set_piece("wP", game_state.string_to_position("e7"))
-    game_state.set_piece("bK", game_state.string_to_position("c2"))
-    game_state.set_piece("wK", game_state.string_to_position("e1"))
-    game_state.move_piece(from_square="e7", to_square="e8")
-    game_state.display_board()
-
-def checkmate_evaluation():
-    game_state = ConstrainedGameState()
-    game_state.set_start_position()
-    game_state.move_piece(from_square="g2", to_square="g4")
-    game_state.move_piece(from_square="e7", to_square="e5")
-    game_state.move_piece(from_square="f2", to_square="f4")
-    game_state.move_piece(from_square="d8", to_square="h4", piece="Q") # Should be checkmate
-    game_state.display_board()
-
-def threefold_rep_evaluation():
-    game_state = ConstrainedGameState()
-    game_state.set_piece("wP", game_state.string_to_position("e2")) # direct piece placement
-    game_state.set_piece("bK", game_state.string_to_position("e5"))
-    game_state.set_piece("wK", game_state.string_to_position("e1"))
-    game_state.set_piece("bP", game_state.string_to_position("e4"))
-    game_state.white_to_move = True
-    game_state.display_board()
-    game_state.move_piece(from_square="e1", to_square="f1", piece="K")
-    game_state.move_piece(from_square="e5", to_square="f5", piece="K")
-    game_state.move_piece(from_square="f1", to_square="e1", piece="K")
-    game_state.move_piece(from_square="f5", to_square="e5", piece="K")
+    def get_board_as_standard_fen(self):
+        """
+        Export the current board state as a FEN string using standard coordinates.
+        This is useful for opening book and tablebase integration.
+        
+        Returns:
+            str: FEN string representing the current position
+        """
+        fen_board = ['.' for _ in range(64)]
+        
+        piece_to_fen = {
+            'wK': 'K', 'wQ': 'Q', 'wR': 'R', 'wB': 'B', 'wN': 'N', 'wP': 'P',
+            'bK': 'k', 'bQ': 'q', 'bR': 'r', 'bB': 'b', 'bN': 'n', 'bP': 'p'
+        }
+        
+        # Convert internal positions to standard positions
+        for piece, bitboard in self.board.items():
+            for internal_pos in range(64):
+                if bitboard & (1 << internal_pos):
+                    standard_pos = self.internal_to_standard_position(internal_pos)
+                    fen_board[standard_pos] = piece_to_fen[piece]
+        
+        # Build FEN string (rank 8 to rank 1, files a-h)
+        fen_ranks = []
+        for rank in range(7, -1, -1):  # Start from rank 8 (index 7)
+            rank_str = ""
+            empty_count = 0
+            
+            for file in range(8):  # Files a-h (indices 0-7)
+                pos = rank * 8 + file
+                piece = fen_board[pos]
+                
+                if piece == '.':
+                    empty_count += 1
+                else:
+                    if empty_count > 0:
+                        rank_str += str(empty_count)
+                        empty_count = 0
+                    rank_str += piece
+            
+            if empty_count > 0:
+                rank_str += str(empty_count)
+            
+            fen_ranks.append(rank_str)
+        
+        board_fen = '/'.join(fen_ranks)
+        
+        # Add turn, castling, en passant, halfmove, fullmove
+        turn = 'w' if self.white_to_move else 'b'
+        
+        castling = ''
+        if hasattr(self, 'w_castle_k') and self.w_castle_k:
+            castling += 'K'
+        if hasattr(self, 'w_castle_q') and self.w_castle_q:
+            castling += 'Q'
+        if hasattr(self, 'b_castle_k') and self.b_castle_k:
+            castling += 'k'
+        if hasattr(self, 'b_castle_q') and self.b_castle_q:
+            castling += 'q'
+        if not castling:
+            castling = '-'
+        
+        # En passant target (simplified for now)
+        en_passant = '-'
+        if hasattr(self, 'en_passant_target') and self.en_passant_target is not None:
+            en_passant_standard = self.internal_to_standard_position(self.en_passant_target)
+            en_passant = self.standard_position_to_algebraic(en_passant_standard)
+        
+        # Halfmove and fullmove clocks (simplified)
+        halfmove = '0'
+        fullmove = str(len(self.move_log) // 2 + 1) if hasattr(self, 'move_log') else '1'
+        
+        return f"{board_fen} {turn} {castling} {en_passant} {halfmove} {fullmove}"
     
-    game_state.display_board()
+    def standard_position_to_algebraic(self, standard_position):
+        """
+        Convert a standard position (0-63) to algebraic notation (a1-h8).
+        
+        Args:
+            standard_position (int): Position in standard coordinate system
+            
+        Returns:
+            str: Algebraic notation (e.g., 'e4')
+        """
+        rank = standard_position // 8
+        file = standard_position % 8
+        return chr(ord('a') + file) + str(rank + 1)
     
-    game_state.move_piece(from_square="e1", to_square="f1", piece="K")
-    game_state.move_piece(from_square="e5", to_square="f5", piece="K")
-    game_state.move_piece(from_square="f1", to_square="e1", piece="K")
-    game_state.move_piece(from_square="f5", to_square="e5", piece="K")
-    
-    game_state.display_board()
-    
-    game_state.move_piece(from_square="e1", to_square="f1", piece="K")
-    game_state.move_piece(from_square="e5", to_square="f5", piece="K")
-    game_state.move_piece(from_square="f1", to_square="e1", piece="K")
-    game_state.move_piece(from_square="f5", to_square="e5", piece="K")
-    
-    game_state.display_board()
-    
-if __name__ == "__main__":
-    #gameplay_check()
-    checking_evaluation()
-    #checkmate_evaluation()
-    #threefold_rep_evaluation()
+    def algebraic_to_standard_position(self, algebraic):
+        """
+        Convert algebraic notation (a1-h8) to standard position (0-63).
+        
+        Args:
+            algebraic (str): Algebraic notation (e.g., 'e4')
+            
+        Returns:
+            int: Position in standard coordinate system
+        """
+        file = ord(algebraic[0]) - ord('a')
+        rank = int(algebraic[1]) - 1
+        return rank * 8 + file
 
 
 
